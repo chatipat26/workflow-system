@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS (รองรับ Dark/Light Mode และปรับ Card UI)
+# Custom CSS
 st.markdown("""
     <style>
     font-family: 'Sarabun', sans-serif;
@@ -24,6 +24,18 @@ st.markdown("""
         margin-bottom: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         border-left: 5px solid #b4c6e7;
+    }
+    
+    /* แจ้งเตือนสีแดง สำหรับงานเลยกำหนด */
+    .kanban-card-overdue {
+        border-left: 5px solid #ef4444 !important;
+        background-color: #fef2f2 !important;
+    }
+    
+    /* แจ้งเตือนสีเหลือง สำหรับงานใกล้ถึงกำหนด (3 วัน) */
+    .kanban-card-warning {
+        border-left: 5px solid #f59e0b !important;
+        background-color: #fffbeb !important;
     }
     
     .kanban-card-title {
@@ -79,7 +91,6 @@ def fetch_tasks():
 
 def update_task_status(task_id, new_status, task_type, current_due_date):
     if new_status == "Done" and task_type == "Routine":
-        # แก้ไขให้ "ใช้การ์ดเดิม" ย้ายกลับไป To Do พร้อมบวกเวลา 24 วัน (ไม่เพิ่มการ์ดใหม่แล้ว)
         old_due = pd.to_datetime(current_due_date) if current_due_date else datetime.today()
         next_due = (old_due + timedelta(days=24)).strftime('%Y-%m-%d')
         
@@ -89,8 +100,11 @@ def update_task_status(task_id, new_status, task_type, current_due_date):
         }).eq("task_id", task_id).execute()
         st.toast("🔄 งาน Routine ถูกรีเซ็ตกลับไป 'To Do' พร้อมอัปเดตวันส่งอีก 24 วัน!")
     else:
-        # อัปเดตสถานะงานปกติ
         supabase.table("tasks").update({"status": new_status}).eq("task_id", task_id).execute()
+
+def delete_task(task_id):
+    supabase.table("tasks").delete().eq("task_id", task_id).execute()
+    st.toast("🗑️ ลบงานออกจากระบบเรียบร้อยแล้ว!")
 
 # --- Module 1: Authentication Page ---
 def show_login_page():
@@ -128,8 +142,25 @@ def show_kanban_page():
                     badge_class = "badge-project" if row['task_type'] == "Project" else "badge-routine"
                     urgent_badge = '<span class="badge-urgent">🔥 Urgent</span>' if row['priority'] == 'Urgent' else ''
                     
+                    # ลอจิกคำนวณการแจ้งเตือนวันกำหนดส่ง
+                    alert_class = ""
+                    alert_text = ""
+                    if status != 'Done' and row['due_date']:
+                        try:
+                            due_dt = pd.to_datetime(row['due_date']).date()
+                            today_dt = datetime.today().date()
+                            days_diff = (due_dt - today_dt).days
+                            
+                            if days_diff < 0:
+                                alert_class = "kanban-card-overdue"
+                                alert_text = '<br/><span style="color:#ef4444; font-size:0.75rem; font-weight:bold;">🚨 เกินกำหนด!</span>'
+                            elif days_diff <= 3:
+                                alert_class = "kanban-card-warning"
+                                alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ เหลืออีก {days_diff} วัน</span>'
+                        except:
+                            pass
+                    
                     if status == 'Done':
-                        # --- UI การ์ดย่อขนาดสำหรับช่อง Done ---
                         st.markdown(f"""
                         <div class="kanban-card" style="padding: 12px; border-left: 5px solid #a7f3d0; opacity: 0.75; margin-bottom: 8px;">
                             <span class="{badge_class}" style="font-size: 0.65rem; padding: 2px 6px;">{row['task_type']}</span>
@@ -140,17 +171,23 @@ def show_kanban_page():
                         
                         with st.expander("⚙️ แก้ไขสถานะ"):
                             new_stat = st.selectbox("ย้ายการ์ดกลับ:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
-                            if st.button("อัปเดต", key=f"btn_{row['task_id']}", use_container_width=True):
-                                update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
-                                st.rerun()
+                            
+                            c1, c2 = st.columns([2, 1])
+                            with c1:
+                                if st.button("อัปเดต", key=f"btn_{row['task_id']}", use_container_width=True):
+                                    update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
+                                    st.rerun()
+                            with c2:
+                                if st.button("🗑️", key=f"del_{row['task_id']}", help="ลบงานนี้", use_container_width=True):
+                                    delete_task(row['task_id'])
+                                    st.rerun()
                     else:
-                        # --- UI การ์ดขนาดปกติสำหรับช่องอื่นๆ ---
                         st.markdown(f"""
-                        <div class="kanban-card">
+                        <div class="kanban-card {alert_class}">
                             <span class="{badge_class}">{row['task_type']}</span> {urgent_badge}
                             <div class="kanban-card-title">{row['title']}</div>
                             <small>👤 รับผิดชอบ: {row['assignee_name'] or '-'}</small><br/>
-                            <small>📅 กำหนดส่ง: {row['due_date'] or '-'}</small>
+                            <small>📅 กำหนดส่ง: {row['due_date'] or '-'}</small>{alert_text}
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -164,9 +201,16 @@ def show_kanban_page():
                             
                             st.divider()
                             new_stat = st.selectbox("เลื่อนการ์ดไปที่:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
-                            if st.button("บันทึกสถานะ", key=f"btn_{row['task_id']}", use_container_width=True):
-                                update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
-                                st.rerun()
+                            
+                            c1, c2 = st.columns([2, 1])
+                            with c1:
+                                if st.button("บันทึกสถานะ", key=f"btn_{row['task_id']}", use_container_width=True):
+                                    update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
+                                    st.rerun()
+                            with c2:
+                                if st.button("🗑️ ลบ", key=f"del_{row['task_id']}", help="ลบงานนี้", use_container_width=True):
+                                    delete_task(row['task_id'])
+                                    st.rerun()
 
 # --- Module 3: Task Request Form Page ---
 def show_request_form_page():
