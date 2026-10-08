@@ -1,65 +1,72 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 from client import supabase
 
-# --- UI/UX & CSS Styling ---
-# ใช้โทนสี: Rose Gold (#e0b8b8), Muted Pastel Blue (#b4c6e7), Pastel Champagne (#f5e6b3)
-st.set_page_config(page_title="Team Workflow Hub", layout="wide")
+# --- Configuration & Theme Setup ---
+st.set_page_config(
+    page_title="Team Workflow Hub",
+    page_icon="📋",
+    layout="wide"
+)
+
+# Custom CSS (รองรับ Dark/Light Mode และปรับ Card UI)
 st.markdown("""
     <style>
-    /* ปรับแต่งพื้นหลังและฟอนต์ */
-    .stApp {
-        background-color: #fcfcfc;
-    }
+    font-family: 'Sarabun', sans-serif;
     
-    /* ตกแต่งการ์ดงาน (Kanban Board) ให้มีมุมโค้งมน */
-    .task-card {
-        background-color: #b4c6e7; /* Muted Pastel Blue */
-        padding: 15px;
-        border-radius: 15px;
-        margin-bottom: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        color: #333333;
-    }
-    
-    .task-card-title {
-        font-weight: bold;
-        font-size: 1.1em;
-        margin-bottom: 5px;
-        color: #2c3e50;
-    }
-    
-    /* ป้ายกำกับ Project / Routine */
-    .badge-project {
-        background-color: #e0b8b8; /* Rose Gold */
-        padding: 4px 8px;
+    .kanban-card {
+        background-color: var(--background-color);
+        border: 1px solid #d1d5db;
         border-radius: 12px;
-        font-size: 0.8em;
-        color: #fff;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border-left: 5px solid #b4c6e7;
+    }
+    
+    .kanban-card-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        margin-top: 8px;
+    }
+
+    .badge-project {
+        background-color: #e0b8b8;
+        color: #ffffff;
+        padding: 3px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
     }
     
     .badge-routine {
-        background-color: #f5e6b3; /* Pastel Champagne */
-        padding: 4px 8px;
-        border-radius: 12px;
-        font-size: 0.8em;
-        color: #555;
+        background-color: #f5e6b3;
+        color: #5d4037;
+        padding: 3px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
     }
-    
-    /* ปรับแต่งปุ่มและฟอร์ม */
+
+    .badge-urgent {
+        background-color: #ff8a80;
+        color: #ffffff;
+        padding: 2px 6px;
+        border-radius: 8px;
+        font-size: 0.7rem;
+    }
+
     div[data-baseweb="button"] > button {
-        background-color: #e0b8b8 !important;
         border-radius: 10px !important;
-        color: white !important;
-        border: none !important;
+        font-weight: 600 !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Session State สำหรับ Login ---
+# --- Session State Management ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -67,17 +74,18 @@ if "username" not in st.session_state:
 
 # --- Helper Functions ---
 def fetch_tasks():
-    response = supabase.table("tasks").select("*").execute()
-    return pd.DataFrame(response.data)
+    res = supabase.table("tasks").select("*").execute()
+    return pd.DataFrame(res.data)
 
-def update_task_status(task_id, new_status, task_type, old_due_date):
-    # อัปเดตสถานะงานปัจจุบัน
+def update_task_status(task_id, new_status, task_type, current_due_date):
     supabase.table("tasks").update({"status": new_status}).eq("task_id", task_id).execute()
     
-    # Automation: ถ้าระบุว่า Done และเป็น Routine ให้สร้างการ์ดใหม่ที่ To Do พร้อมขยับ Due Date 7 วัน
+    # Automation: ถ้างามประจำ (Routine) ถูกย้ายไป 'Done' ให้คัดลอกสร้างการ์ดใหม่กลับไปที่ 'To Do' พร้อมเลื่อน Due Date 24 วัน
     if new_status == "Done" and task_type == "Routine":
         task_data = supabase.table("tasks").select("*").eq("task_id", task_id).execute().data[0]
-        new_due = pd.to_datetime(old_due_date) + timedelta(days=7)
+        
+        old_due = pd.to_datetime(current_due_date) if current_due_date else datetime.today()
+        next_due = (old_due + timedelta(days=24)).strftime('%Y-%m-%d')
         
         new_task = {
             "title": task_data["title"],
@@ -86,36 +94,37 @@ def update_task_status(task_id, new_status, task_type, old_due_date):
             "status": "To Do",
             "priority": task_data["priority"],
             "start_date": datetime.today().strftime('%Y-%m-%d'),
-            "due_date": new_due.strftime('%Y-%m-%d'),
+            "due_date": next_due,
             "assignee_name": task_data["assignee_name"],
             "requester_name": task_data["requester_name"],
-            "requester_dept": task_data["requester_dept"]
+            "requester_dept": task_data["requester_dept"],
+            "attachment_url": task_data["attachment_url"]
         }
         supabase.table("tasks").insert(new_task).execute()
-        st.success("🔄 Automation: สร้าง Routine Task รอบถัดไปเรียบร้อยแล้ว!")
+        st.toast("🔄 ระบบสร้างงาน Routine ล่วงหน้าสำหรับ 24 วันข้างหน้าเรียบร้อยแล้ว!")
 
-# --- Page 1: Login / Authentication ---
-def login_page():
-    st.title("🔒 System Login")
-    with st.container():
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            st.markdown('<div class="task-card">', unsafe_allow_html=True)
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            if st.button("Login"):
-                res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
-                if len(res.data) > 0:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.rerun()
-                else:
-                    st.error("Invalid Username or Password")
-            st.markdown('</div>', unsafe_allow_html=True)
+# --- Module 1: Authentication Page ---
+def show_login_page():
+    st.title("🔒 เข้าสู่ระบบ (System Login)")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="kanban-card">', unsafe_allow_html=True)
+        username = st.text_input("ชื่อผู้ใช้งาน (Username)")
+        password = st.text_input("รหัสผ่าน (Password)", type="password")
+        
+        if st.button("เข้าสู่ระบบ", use_container_width=True):
+            res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
+            if len(res.data) > 0:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.rerun()
+            else:
+                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Page 2: Kanban Board ---
-def kanban_page():
-    st.header("📋 Kanban Board")
+# --- Module 2: Kanban Board Page ---
+def show_kanban_page():
+    st.header("📋 Kanban Board (ติดตามสถานะงาน)")
     df = fetch_tasks()
     
     statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
@@ -123,126 +132,147 @@ def kanban_page():
     
     for idx, status in enumerate(statuses):
         with cols[idx]:
-            st.markdown(f"### {status}")
-            if not df.empty:
+            st.markdown(f"#### {status}")
+            if not df.empty and 'status' in df.columns:
                 status_df = df[df['status'] == status]
                 for _, row in status_df.iterrows():
                     badge_class = "badge-project" if row['task_type'] == "Project" else "badge-routine"
+                    urgent_badge = '<span class="badge-urgent">🔥 Urgent</span>' if row['priority'] == 'Urgent' else ''
                     
                     st.markdown(f"""
-                    <div class="task-card">
-                        <span class="{badge_class}">{row['task_type']}</span>
-                        <div class="task-card-title">{row['title']}</div>
-                        <small>👷 {row['assignee_name']}</small><br/>
-                        <small>📅 Due: {row['due_date']}</small>
+                    <div class="kanban-card">
+                        <span class="{badge_class}">{row['task_type']}</span> {urgent_badge}
+                        <div class="kanban-card-title">{row['title']}</div>
+                        <small>👤 รับผิดชอบ: {row['assignee_name'] or '-'}</small><br/>
+                        <small>📅 กำหนดส่ง: {row['due_date'] or '-'}</small>
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # ปุ่มอัปเดตสถานะ (แสดงด้วย Expander เพื่อความสะอาดของ UI)
-                    with st.expander("Update Status"):
-                        new_stat = st.selectbox("Move to:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
-                        if st.button("Save", key=f"btn_{row['task_id']}"):
+                    with st.expander("🔍 ดูรายละเอียด / อัปเดตสถานะ"):
+                        st.markdown(f"**ผู้ขอเปิดงาน:** {row['requester_name'] or '-'} ({row['requester_dept'] or '-'})")
+                        st.markdown(f"**รายละเอียดงาน:**")
+                        st.info(row['description'] or 'ไม่มีข้อมูลรายละเอียด')
+                        
+                        if row['attachment_url']:
+                            st.markdown(f"[📎 คลิกดูไฟล์แนบ]({row['attachment_url']})")
+                        
+                        st.divider()
+                        new_stat = st.selectbox("เลื่อนการ์ดไปที่:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
+                        if st.button("บันทึกสถานะ", key=f"btn_{row['task_id']}", use_container_width=True):
                             update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
                             st.rerun()
 
-# --- Page 3: Task Request Form ---
-def task_request_page():
-    st.header("📝 Submit a New Task Request")
+# --- Module 3: Task Request Form Page ---
+def show_request_form_page():
+    st.header("📝 ฟอร์มส่งขอเปิดงานใหม่ (Task Request Form)")
     
-    with st.form("task_form"):
+    with st.form("task_request_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            requester_name = st.text_input("Requester Name (ชื่อผู้ส่งงาน)")
-            requester_dept = st.text_input("Department (แผนก)")
-            title = st.text_input("Task Title (ชื่องาน)")
-            task_type = st.selectbox("Task Type (ประเภทงาน)", ["Project", "Routine"])
+            requester_name = st.text_input("ชื่อผู้ส่งงาน *")
+            requester_dept = st.text_input("แผนก/ฝ่ายผู้ส่ง *")
+            title = st.text_input("ชื่องาน / หัวข้อโปรเจกต์ *")
+            task_type = st.selectbox("ประเภทงาน", ["Project", "Routine"])
         with col2:
-            assignee_name = st.text_input("Assignee Name (ชื่อผู้รับผิดชอบ)")
-            priority = st.selectbox("Priority (ความเร่งด่วน)", ["Normal", "High", "Urgent"])
-            due_date = st.date_input("Due Date (วันกำหนดส่ง)")
-            attachment = st.text_input("Attachment URL (ลิงก์ไฟล์แนบ หากมี)")
+            assignee_name = st.text_input("มอบหมายให้ผู้รับผิดชอบ (ถ้าทราบ)")
+            priority = st.selectbox("ระดับความเร่งด่วน", ["Normal", "High", "Urgent"])
+            due_date = st.date_input("วันที่ต้องการงาน (Due Date)")
+            attachment = st.text_input("ลิงก์ไฟล์แนบ (Google Drive / Cloud Link)")
             
-        description = st.text_area("Scope & Details (รายละเอียดงาน)")
-        submitted = st.form_submit_button("Submit Request")
+        description = st.text_area("รายละเอียดขอบเขตงาน (Scope of Work)")
+        submitted = st.form_submit_button("ส่งขอเปิดงานใหม่")
         
         if submitted:
-            new_task = {
-                "title": title,
-                "description": description,
-                "task_type": task_type,
-                "status": "To Do",
-                "priority": priority,
-                "due_date": due_date.strftime('%Y-%m-%d'),
-                "assignee_name": assignee_name,
-                "requester_name": requester_name,
-                "requester_dept": requester_dept,
-                "attachment_url": attachment
-            }
-            supabase.table("tasks").insert(new_task).execute()
-            st.success("✅ งานถูกส่งเข้าสู่ระบบ และปรากฏใน To Do เรียบร้อยแล้ว!")
+            if not requester_name or not title:
+                st.error("กรุณากรอกชื่อผู้ส่งและชื่องานให้ครบถ้วน")
+            else:
+                new_task = {
+                    "title": title,
+                    "description": description,
+                    "task_type": task_type,
+                    "status": "To Do",
+                    "priority": priority,
+                    "due_date": due_date.strftime('%Y-%m-%d'),
+                    "assignee_name": assignee_name,
+                    "requester_name": requester_name,
+                    "requester_dept": requester_dept,
+                    "attachment_url": attachment
+                }
+                supabase.table("tasks").insert(new_task).execute()
+                st.success("✅ บันทึกข้อมูลเรียบร้อยแล้ว งานถูกส่งไปที่ช่อง 'To Do' บนกระดาน Kanban")
 
-# --- Page 4: Manager Dashboard ---
-def dashboard_page():
+# --- Module 4: Manager Dashboard Page ---
+def show_dashboard_page():
     st.header("📊 Manager Dashboard & Monitor")
     df = fetch_tasks()
     
     if df.empty:
-        st.info("ยังไม่มีข้อมูลในระบบ")
+        st.info("ยังไม่มีข้อมูลงานในระบบ")
         return
 
-    # Filter Section
-    st.markdown("##### 🔍 Filters")
-    col1, col2 = st.columns(2)
-    with col1:
-        assignee_filter = st.selectbox("กรองตามผู้รับผิดชอบ:", ["All"] + list(df['assignee_name'].dropna().unique()))
-    with col2:
-        overdue_only = st.checkbox("แสดงเฉพาะงานเกินกำหนด (Overdue)")
+    st.markdown("##### 🔍 ตัวกรองค้นหา")
+    f_col1, f_col2 = st.columns(2)
+    with f_col1:
+        assignees = ["ทั้งหมด"] + [a for a in df['assignee_name'].dropna().unique() if a]
+        selected_assignee = st.selectbox("เลือกตามชื่อผู้รับผิดชอบ:", assignees)
+    with f_col2:
+        show_overdue = st.checkbox("แสดงเฉพาะงานที่เกินกำหนด (Overdue)")
 
-    # Apply Filters
     filtered_df = df.copy()
-    if assignee_filter != "All":
-        filtered_df = filtered_df[filtered_df['assignee_name'] == assignee_filter]
-    if overdue_only:
-        filtered_df['due_date'] = pd.to_datetime(filtered_df['due_date'])
-        filtered_df = filtered_df[filtered_df['due_date'] < datetime.now()]
+    if selected_assignee != "ทั้งหมด":
+        filtered_df = filtered_df[filtered_df['assignee_name'] == selected_assignee]
+        
+    if show_overdue:
+        filtered_df['due_date_dt'] = pd.to_datetime(filtered_df['due_date'])
+        filtered_df = filtered_df[(filtered_df['due_date_dt'] < datetime.now()) & (filtered_df['status'] != 'Done')]
 
-    # Metrics Overview
     st.markdown("---")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("📌 Total Tasks", len(filtered_df))
-    m2.metric("⏳ In Progress", len(filtered_df[filtered_df['status'] == 'In Progress']))
-    m3.metric("✅ Done", len(filtered_df[filtered_df['status'] == 'Done']))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("📌 งานทั้งหมด", len(filtered_df))
+    m2.metric("⏳ กำลังดำเนินการ", len(filtered_df[filtered_df['status'] == 'In Progress']))
+    m3.metric("🔍 อยู่ระหว่างตรวจ/แก้ไข", len(filtered_df[filtered_df['status'].isin(['In Review', 'Revision'])]))
+    m4.metric("✅ เสร็จสิ้น", len(filtered_df[filtered_df['status'] == 'Done']))
 
-    # Workload Chart (Plotly)
     st.markdown("---")
-    st.markdown("##### 📈 Workload by Assignee (Not Done)")
-    workload_df = filtered_df[filtered_df['status'] != 'Done']
-    if not workload_df.empty:
-        workload_count = workload_df.groupby('assignee_name').size().reset_index(name='tasks')
-        fig = px.bar(workload_count, x='assignee_name', y='tasks', 
-                     color_discrete_sequence=['#b4c6e7'], 
-                     title="ปริมาณงานค้างของแต่ละบุคคล")
+    st.markdown("##### 📈 ปริมาณงานค้างมือรายบุคคล (Workload View)")
+    pending_df = filtered_df[filtered_df['status'] != 'Done']
+    
+    if not pending_df.empty:
+        workload = pending_df.groupby('assignee_name').size().reset_index(name='task_count')
+        fig = px.bar(
+            workload, 
+            x='assignee_name', 
+            y='task_count',
+            labels={'assignee_name': 'ผู้รับผิดชอบ', 'task_count': 'จำนวนงานที่ถืออยู่'},
+            color_discrete_sequence=['#b4c6e7']
+        )
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.write("ไม่มีงานค้าง")
+        st.success("ไม่มีงานตกค้างในระบบ")
 
-# --- Main App Logic (Sidebar Navigation) ---
+# --- Main Application Controller ---
 if not st.session_state.logged_in:
-    login_page()
+    show_login_page()
 else:
-    st.sidebar.title(f"👤 Welcome, {st.session_state.username}")
+    st.sidebar.markdown(f"### 👤 ผู้ใช้งาน: **{st.session_state.username}**")
     st.sidebar.markdown("---")
-    page = st.sidebar.radio("Navigation", 
-                           ["Kanban Board", "Task Request Form", "Manager Dashboard"])
     
-    if st.sidebar.button("Logout"):
+    page = st.sidebar.radio("เมนูการใช้งาน", [
+        "Kanban Board", 
+        "Task Request Form", 
+        "Manager Dashboard"
+    ])
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("ออกจากระบบ (Logout)", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.rerun()
 
     if page == "Kanban Board":
-        kanban_page()
+        show_kanban_page()
     elif page == "Task Request Form":
-        task_request_page()
+        show_request_form_page()
     elif page == "Manager Dashboard":
-        dashboard_page()
+        show_dashboard_page()
