@@ -92,14 +92,15 @@ def fetch_tasks():
 def update_task_status(task_id, new_status, task_type, current_due_date):
     if new_status == "Done" and task_type == "Routine":
         old_due = pd.to_datetime(current_due_date) if current_due_date else datetime.today()
-        # บวกเวลาเพิ่มไปอีก 24 วันสำหรับรอบถัดไป
-        next_due = (old_due + timedelta(days=24)).strftime('%Y-%m-%d')
+        # ล็อกรอบเป็นวันเดิมของเดือนถัดไป (Monthly Recurrence)
+        next_month_date = old_due + pd.DateOffset(months=1)
+        next_due = next_month_date.strftime('%Y-%m-%d')
         
         supabase.table("tasks").update({
             "status": "To Do",
             "due_date": next_due
         }).eq("task_id", task_id).execute()
-        st.toast(f"🔄 งาน Routine ถูกรีเซ็ตกลับไป 'To Do' พร้อมอัปเดตวันส่งเป็น {next_due}")
+        st.toast(f"🔄 งาน Routine ถูกรีเซ็ตกลับไป 'To Do' พร้อมล็อกวันส่งรอบถัดไปเป็น: {next_due}")
     else:
         supabase.table("tasks").update({"status": new_status}).eq("task_id", task_id).execute()
 
@@ -143,7 +144,7 @@ def show_kanban_page():
                     badge_class = "badge-project" if row['task_type'] == "Project" else "badge-routine"
                     urgent_badge = '<span class="badge-urgent">🔥 Urgent</span>' if row['priority'] == 'Urgent' else ''
                     
-                    # ลอจิกคำนวณการแจ้งเตือนวันกำหนดส่ง (แยกระหว่าง Project และ Routine)
+                    # ลอจิกคำนวณการแจ้งเตือนวันกำหนดส่ง
                     alert_class = ""
                     alert_text = ""
                     if status != 'Done' and row['due_date']:
@@ -155,9 +156,9 @@ def show_kanban_page():
                             if days_diff < 0:
                                 alert_class = "kanban-card-overdue"
                                 alert_text = '<br/><span style="color:#ef4444; font-size:0.75rem; font-weight:bold;">🚨 เกินกำหนด!</span>'
-                            elif row['task_type'] == 'Routine' and days_diff <= 24:
+                            elif row['task_type'] == 'Routine' and days_diff <= 7:
                                 alert_class = "kanban-card-warning"
-                                alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ ใกล้ถึงรอบงานประจำ (เหลือ {days_diff} วัน)</span>'
+                                alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ รอบเดือนนี้ใกล้ถึงกำหนด (เหลือ {days_diff} วัน)</span>'
                             elif row['task_type'] == 'Project' and days_diff <= 3:
                                 alert_class = "kanban-card-warning"
                                 alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ ใกล้กำหนดส่ง (เหลือ {days_diff} วัน)</span>'
