@@ -78,30 +78,19 @@ def fetch_tasks():
     return pd.DataFrame(res.data)
 
 def update_task_status(task_id, new_status, task_type, current_due_date):
-    supabase.table("tasks").update({"status": new_status}).eq("task_id", task_id).execute()
-    
-    # Automation: ถ้างามประจำ (Routine) ถูกย้ายไป 'Done' ให้คัดลอกสร้างการ์ดใหม่กลับไปที่ 'To Do' พร้อมเลื่อน Due Date 24 วัน
     if new_status == "Done" and task_type == "Routine":
-        task_data = supabase.table("tasks").select("*").eq("task_id", task_id).execute().data[0]
-        
+        # แก้ไขให้ "ใช้การ์ดเดิม" ย้ายกลับไป To Do พร้อมบวกเวลา 24 วัน (ไม่เพิ่มการ์ดใหม่แล้ว)
         old_due = pd.to_datetime(current_due_date) if current_due_date else datetime.today()
         next_due = (old_due + timedelta(days=24)).strftime('%Y-%m-%d')
         
-        new_task = {
-            "title": task_data["title"],
-            "description": task_data["description"],
-            "task_type": "Routine",
+        supabase.table("tasks").update({
             "status": "To Do",
-            "priority": task_data["priority"],
-            "start_date": datetime.today().strftime('%Y-%m-%d'),
-            "due_date": next_due,
-            "assignee_name": task_data["assignee_name"],
-            "requester_name": task_data["requester_name"],
-            "requester_dept": task_data["requester_dept"],
-            "attachment_url": task_data["attachment_url"]
-        }
-        supabase.table("tasks").insert(new_task).execute()
-        st.toast("🔄 ระบบสร้างงาน Routine ล่วงหน้าสำหรับ 24 วันข้างหน้าเรียบร้อยแล้ว!")
+            "due_date": next_due
+        }).eq("task_id", task_id).execute()
+        st.toast("🔄 งาน Routine ถูกรีเซ็ตกลับไป 'To Do' พร้อมอัปเดตวันส่งอีก 24 วัน!")
+    else:
+        # อัปเดตสถานะงานปกติ
+        supabase.table("tasks").update({"status": new_status}).eq("task_id", task_id).execute()
 
 # --- Module 1: Authentication Page ---
 def show_login_page():
@@ -139,28 +128,45 @@ def show_kanban_page():
                     badge_class = "badge-project" if row['task_type'] == "Project" else "badge-routine"
                     urgent_badge = '<span class="badge-urgent">🔥 Urgent</span>' if row['priority'] == 'Urgent' else ''
                     
-                    st.markdown(f"""
-                    <div class="kanban-card">
-                        <span class="{badge_class}">{row['task_type']}</span> {urgent_badge}
-                        <div class="kanban-card-title">{row['title']}</div>
-                        <small>👤 รับผิดชอบ: {row['assignee_name'] or '-'}</small><br/>
-                        <small>📅 กำหนดส่ง: {row['due_date'] or '-'}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    with st.expander("🔍 ดูรายละเอียด / อัปเดตสถานะ"):
-                        st.markdown(f"**ผู้ขอเปิดงาน:** {row['requester_name'] or '-'} ({row['requester_dept'] or '-'})")
-                        st.markdown(f"**รายละเอียดงาน:**")
-                        st.info(row['description'] or 'ไม่มีข้อมูลรายละเอียด')
+                    if status == 'Done':
+                        # --- UI การ์ดย่อขนาดสำหรับช่อง Done ---
+                        st.markdown(f"""
+                        <div class="kanban-card" style="padding: 12px; border-left: 5px solid #a7f3d0; opacity: 0.75; margin-bottom: 8px;">
+                            <span class="{badge_class}" style="font-size: 0.65rem; padding: 2px 6px;">{row['task_type']}</span>
+                            <div class="kanban-card-title" style="font-size: 0.9rem; margin: 6px 0; text-decoration: line-through; color: #6b7280;">{row['title']}</div>
+                            <small style="font-size: 0.75rem; color: #6b7280;">📅 {row['due_date'] or '-'}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
-                        if row['attachment_url']:
-                            st.markdown(f"[📎 คลิกดูไฟล์แนบ]({row['attachment_url']})")
+                        with st.expander("⚙️ แก้ไขสถานะ"):
+                            new_stat = st.selectbox("ย้ายการ์ดกลับ:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
+                            if st.button("อัปเดต", key=f"btn_{row['task_id']}", use_container_width=True):
+                                update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
+                                st.rerun()
+                    else:
+                        # --- UI การ์ดขนาดปกติสำหรับช่องอื่นๆ ---
+                        st.markdown(f"""
+                        <div class="kanban-card">
+                            <span class="{badge_class}">{row['task_type']}</span> {urgent_badge}
+                            <div class="kanban-card-title">{row['title']}</div>
+                            <small>👤 รับผิดชอบ: {row['assignee_name'] or '-'}</small><br/>
+                            <small>📅 กำหนดส่ง: {row['due_date'] or '-'}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
-                        st.divider()
-                        new_stat = st.selectbox("เลื่อนการ์ดไปที่:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
-                        if st.button("บันทึกสถานะ", key=f"btn_{row['task_id']}", use_container_width=True):
-                            update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
-                            st.rerun()
+                        with st.expander("🔍 ดูรายละเอียด / อัปเดต"):
+                            st.markdown(f"**ผู้ขอเปิดงาน:** {row['requester_name'] or '-'} ({row['requester_dept'] or '-'})")
+                            st.markdown(f"**รายละเอียดงาน:**")
+                            st.info(row['description'] or 'ไม่มีข้อมูลรายละเอียด')
+                            
+                            if row['attachment_url']:
+                                st.markdown(f"[📎 คลิกดูไฟล์แนบ]({row['attachment_url']})")
+                            
+                            st.divider()
+                            new_stat = st.selectbox("เลื่อนการ์ดไปที่:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
+                            if st.button("บันทึกสถานะ", key=f"btn_{row['task_id']}", use_container_width=True):
+                                update_task_status(row['task_id'], new_stat, row['task_type'], row['due_date'])
+                                st.rerun()
 
 # --- Module 3: Task Request Form Page ---
 def show_request_form_page():
