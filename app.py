@@ -156,9 +156,9 @@ def show_kanban_page():
                             if days_diff < 0:
                                 alert_class = "kanban-card-overdue"
                                 alert_text = '<br/><span style="color:#ef4444; font-size:0.75rem; font-weight:bold;">🚨 เกินกำหนด!</span>'
-                            elif row['task_type'] == 'Routine' and days_diff <= 7:
+                            elif row['task_type'] == 'Routine' and days_diff <= 24:
                                 alert_class = "kanban-card-warning"
-                                alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ รอบเดือนนี้ใกล้ถึงกำหนด (เหลือ {days_diff} วัน)</span>'
+                                alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ ใกล้รอบงาน (เหลือ {days_diff} วัน) - แนะนำย้ายไป In Progress</span>'
                             elif row['task_type'] == 'Project' and days_diff <= 3:
                                 alert_class = "kanban-card-warning"
                                 alert_text = f'<br/><span style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">⚠️ ใกล้กำหนดส่ง (เหลือ {days_diff} วัน)</span>'
