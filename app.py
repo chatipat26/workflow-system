@@ -418,6 +418,172 @@ def show_task_progress_dialog(task, curr_user):
     if st.button("✖️ ปิดหน้าต่าง (Close)", key=f"cls_dlg_{tid}", use_container_width=True):
         st.rerun()
 
+def get_available_months(tasks_df):
+    """ดึงรายการเดือน-ปี ทั้งหมดที่มีในระบบเพื่อใช้เป็นตัวกรองผลงานย้อนหลัง"""
+    if tasks_df.empty:
+        return []
+    months = set()
+    thai_months = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+    for _, r in tasks_df.iterrows():
+        d_val = r.get("completed_at") or r.get("due_date") or r.get("created_at")
+        if d_val:
+            try:
+                dt = pd.to_datetime(d_val)
+                m_label = f"{thai_months[dt.month]} {dt.year + 543}"
+                months.add((dt.year, dt.month, m_label))
+            except Exception:
+                pass
+    sorted_m = sorted(list(months), key=lambda x: (x[0], x[1]), reverse=True)
+    return [x[2] for x in sorted_m]
+
+def task_matches_month(task_row, month_label):
+    """ตรวจสอบว่างานนี้อยู่ในเดือน-ปีที่เลือกหรือไม่"""
+    if not month_label or month_label == "ทุกเดือน":
+        return True
+    d_val = task_row.get("completed_at") or task_row.get("due_date") or task_row.get("created_at")
+    if not d_val:
+        return False
+    try:
+        dt = pd.to_datetime(d_val)
+        thai_months = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+        m_label = f"{thai_months[dt.month]} {dt.year + 543}"
+        return m_label == month_label
+    except Exception:
+        return False
+
+@st.dialog("↩️ ความคิดเห็นต่อผลงาน & กำหนดวันส่งใหม่", width="medium")
+def show_return_task_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    assignee = task.get("assignee_name", "-")
+    curr_due = task.get("due_date")
+    try:
+        def_due = pd.to_datetime(curr_due).date() if curr_due else datetime.today().date()
+    except Exception:
+        def_due = datetime.today().date()
+        
+    st.markdown(f"#### 📌 ชื่องาน: **{title}**")
+    st.caption(f"ผู้รับผิดชอบงาน: **{assignee}** | กำหนดส่งเดิม: **{curr_due or '-'}**")
+    st.divider()
+
+    with st.form(f"form_return_{tid}"):
+        choice = st.radio(
+            "การตัดสินใจของผู้สั่งการ:", 
+            ["🚀 อนุมัติให้ทำงานต่อ (ย้ายไป In Progress)", "🔧 ส่งกลับไปแก้ไข (ย้ายไป Revision)"],
+            index=0
+        )
+        
+        feedback = st.text_area(
+            "💬 ข้อความแสดงความคิดเห็นต่อผลงาน (Feedback / สิ่งที่ต้องแก้ไข) *:",
+            placeholder="ระบุคำแนะนำ ข้อคิดเห็น หรือรายละเอียดที่ต้องการให้ดำเนินการต่อ..."
+        )
+        
+        new_due = st.date_input(
+            "📅 กำหนดวันส่งงานใหม่ (New Due Date) สำหรับคำนวณ KPI *:",
+            value=def_due if def_due > datetime.today().date() else datetime.today().date() + timedelta(days=3),
+            min_value=datetime.today().date()
+        )
+        
+        submitted = st.form_submit_button("💾 ยืนยันการส่งงานกลับ", type="primary", use_container_width=True)
+        
+        if submitted:
+            if not feedback.strip():
+                st.error("กรุณากรอกข้อความแสดงความคิดเห็นต่อผลงานก่อนกดยืนยัน")
+            else:
+                target_status = "In Progress" if "In Progress" in choice else "Revision"
+                try:
+                    supabase.table("tasks").update({
+                        "status": target_status,
+                        "due_date": new_due.strftime("%Y-%m-%d"),
+                        "completed_at": None,
+                        "is_ontime": None,
+                        "submission_note": feedback.strip()
+                    }).eq("task_id", tid).execute()
+                    
+                    action_title = "อนุมัติให้ทำงานต่อ" if target_status == "In Progress" else "ส่งกลับไปแก้ไข"
+                    log_msg = f"{feedback.strip()} (กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')})"
+                    supabase.table("task_logs").insert({
+                        "task_id": tid,
+                        "action": action_title,
+                        "performed_by": curr_user.get("username"),
+                        "details": log_msg
+                    }).execute()
+                    
+                    clear_all_cache()
+                    st.success(f"✅ ส่งงานกลับไปยัง {target_status} เรียบร้อยแล้ว! กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาด: {e}")
+    
+    if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_ret_{tid}", use_container_width=True):
+        st.rerun()
+
+@st.dialog("🏆 ตรวจรับงานสำเร็จ & ประเมินคะแนน KPI", width="medium")
+def show_approve_done_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    assignee = task.get("assignee_name", "-")
+    task_type = task.get("task_type", "Project")
+    curr_due = task.get("due_date")
+    is_ot = task.get("is_ontime")
+    
+    st.markdown(f"#### 🏆 ตรวจรับงาน: **{title}**")
+    st.caption(f"ผู้รับผิดชอบงาน: **{assignee}** | ประเภทงาน: **{task_type}** | กำหนดส่ง: **{curr_due or '-'}**")
+    
+    ot_badge = "🟢 ส่งตรงเวลา (+10 แต้ม)" if is_ot is True else ("🔴 ส่งเกินกำหนด (-5 แต้ม)" if is_ot is False else "⚪ ตรวจสอบวันส่ง")
+    st.markdown(f"**สถานะการส่งงาน:** {ot_badge}")
+    st.divider()
+
+    with st.form(f"form_done_{tid}"):
+        rating = st.slider("⭐ คะแนนความพึงพอใจต่อผลงาน (1-5 ดาว):", min_value=1, max_value=5, value=5)
+        st.caption(f"💡 คะแนนดาวนี้จะนำไปคูณ 4 แต้มสำหรับคำนวณ KPI ({rating} x 4 = {rating * 4} แต้ม)")
+        
+        feedback = st.text_area(
+            "💬 ข้อความแสดงความคิดเห็น / คำชมเชยในการตรวจรับงาน:",
+            placeholder="เช่น ผลงานเรียบร้อยตรงตามเป้าหมาย ส่งมอบงานสมบูรณ์..."
+        )
+        
+        submitted = st.form_submit_button("🏆 ยืนยันตรวจรับงานสำเร็จ (ย้ายไป Done)", type="primary", use_container_width=True)
+        
+        if submitted:
+            now_iso = datetime.now().isoformat()
+            try:
+                if task_type == "Routine":
+                    old_due = pd.to_datetime(curr_due) if curr_due else datetime.today()
+                    next_due = (old_due + pd.DateOffset(months=1)).strftime('%Y-%m-%d')
+                    supabase.table("tasks").update({
+                        "status": "To Do",
+                        "due_date": next_due,
+                        "satisfaction_rating": rating,
+                        "completed_at": now_iso,
+                        "submission_note": feedback.strip() if feedback else None
+                    }).eq("task_id", tid).execute()
+                    st.info(f"งาน Routine ได้ขยายรอบกำหนดส่งเดือนถัดไป ({next_due}) เรียบร้อยแล้ว")
+                else:
+                    supabase.table("tasks").update({
+                        "status": "Done",
+                        "satisfaction_rating": rating,
+                        "completed_at": now_iso,
+                        "submission_note": feedback.strip() if feedback else None
+                    }).eq("task_id", tid).execute()
+
+                log_details = f"อนุมัติผลงานสำเร็จ ({rating} ดาว) " + (f"- {feedback.strip()}" if feedback else "")
+                supabase.table("task_logs").insert({
+                    "task_id": tid,
+                    "action": "อนุมัติงานสำเร็จ",
+                    "performed_by": curr_user.get("username"),
+                    "details": log_details
+                }).execute()
+                
+                clear_all_cache()
+                st.success(f"✅ ตรวจรับงานสำเร็จเรียบร้อย! งานถูกย้ายไป Done และบันทึกลงในแดชบอร์ดผลงานย้อนหลังประจำเดือนแล้ว")
+                st.rerun()
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาด: {e}")
+
+    if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_dn_{tid}", use_container_width=True):
+        st.rerun()
+
 # --- Authentication & Registration Page (โลโก้กะทัดรัด & ลายน้ำ Watermark บนแบคกราว) ---
 
 def show_auth_page():
@@ -707,34 +873,18 @@ def show_module1_commander_page():
                     with st.container(border=True):
                         ot_badge = "🟢 ส่งตรงเวลา" if row.get("is_ontime") is True else ("🔴 ส่งเกินกำหนด" if row.get("is_ontime") is False else "⚪ รอตรวจสอบวันส่ง")
                         st.markdown(f"**ชื่องาน:** {row['title']} | {ot_badge}")
-                        st.write(f"ผู้รับผิดชอบ: {row.get('assignee_name') or '-'} | ผลงานที่ส่ง: {row.get('submission_note') or row.get('attachment_url') or '-'}")
+                        st.write(f"ผู้รับผิดชอบ: **{row.get('assignee_name') or '-'}** | ผลงานที่ส่ง: {row.get('submission_note') or row.get('attachment_url') or '-'}")
                         
-                        c_rt, c_bt = st.columns([2, 1])
-                        with c_rt:
-                            rating = st.slider("⭐ ความพึงพอใจ (1-5 ดาว):", 1, 5, 5, key=f"rt_{row['task_id']}")
-                        with c_bt:
-                            st.write("")
-                            if st.button("🏆 อนุมัติผ่านงาน (Done)", key=f"dn_{row['task_id']}", use_container_width=True, type="primary"):
-                                if row.get("task_type") == "Routine":
-                                    old_due = pd.to_datetime(row['due_date']) if row.get('due_date') else datetime.today()
-                                    next_due = (old_due + pd.DateOffset(months=1)).strftime('%Y-%m-%d')
-                                    supabase.table("tasks").update({
-                                        "status": "To Do",
-                                        "due_date": next_due,
-                                        "satisfaction_rating": rating,
-                                        "submission_note": None
-                                    }).eq("task_id", row["task_id"]).execute()
-                                else:
-                                    supabase.table("tasks").update({"status": "Done", "satisfaction_rating": rating}).eq("task_id", row["task_id"]).execute()
-
-                                log_task_action(row["task_id"], "อนุมัติงานสำเร็จ", curr_user.get("username"), f"ให้ {rating} ดาว")
-                                clear_all_cache()
-                                st.rerun()
-
-                            if st.button("↩️ ส่งกลับไปแก้ไข", key=f"rv_{row['task_id']}", use_container_width=True):
-                                supabase.table("tasks").update({"status": "Revision"}).eq("task_id", row["task_id"]).execute()
-                                clear_all_cache()
-                                st.rerun()
+                        c_bt1, c_bt2, c_bt3 = st.columns([1.5, 1.5, 1])
+                        with c_bt1:
+                            if st.button("🏆 ตรวจรับงานสำเร็จ (Done)", key=f"dn_{row['task_id']}", use_container_width=True, type="primary"):
+                                show_approve_done_dialog(row.to_dict(), curr_user)
+                        with c_bt2:
+                            if st.button("↩️ ส่งกลับไป In Progress / แก้ไข", key=f"rv_{row['task_id']}", use_container_width=True):
+                                show_return_task_dialog(row.to_dict(), curr_user)
+                        with c_bt3:
+                            if st.button("📝 ความคืบหน้า", key=f"m1_rev_prg_{row['task_id']}", use_container_width=True):
+                                show_task_progress_dialog(row.to_dict(), curr_user)
         else:
             st.info("ยังไม่มีข้อมูลงานในระบบ")
 
@@ -921,15 +1071,26 @@ def render_task_board(curr_user, curr_username, is_commander):
                                     st.success("ส่งคำขอแล้ว!")
                                     st.rerun()
 
-                        if is_commander:
+                        if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
                             st.divider()
-                            st.caption("สิทธิ์ผู้สั่งการ: ย้ายสถานะโดยตรง")
+                            st.caption("👑 **สิทธิ์ผู้สั่งการ: ตรวจรับและย้ายสถานะงาน**")
+                            if status == "In Review":
+                                if st.button("🏆 ตรวจรับผ่าน (ย้ายไป Done)", key=f"c_dn_{row['task_id']}", type="primary", use_container_width=True):
+                                    show_approve_done_dialog(row.to_dict(), curr_user)
+                                if st.button("↩️ ส่งกลับ In Progress / แก้ไข", key=f"c_rt_{row['task_id']}", use_container_width=True):
+                                    show_return_task_dialog(row.to_dict(), curr_user)
                             all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
-                            new_s = st.selectbox("ย้ายไป:", all_stats, index=all_stats.index(status), key=f"cmd_s_{row['task_id']}")
-                            if st.button("อัปเดตสถานะ", key=f"cmd_upd_{row['task_id']}", use_container_width=True):
-                                supabase.table("tasks").update({"status": new_s}).eq("task_id", row["task_id"]).execute()
-                                clear_all_cache()
-                                st.rerun()
+                            new_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"cmd_s_{row['task_id']}")
+                            if st.button("อัปเดตสถานะงาน", key=f"cmd_upd_{row['task_id']}", use_container_width=True):
+                                if new_s in ["In Progress", "Revision"] and status == "In Review":
+                                    show_return_task_dialog(row.to_dict(), curr_user)
+                                elif new_s == "Done":
+                                    show_approve_done_dialog(row.to_dict(), curr_user)
+                                else:
+                                    supabase.table("tasks").update({"status": new_s}).eq("task_id", row["task_id"]).execute()
+                                    log_task_action(row["task_id"], "ย้ายสถานะ", curr_username, f"ย้ายไป {new_s}")
+                                    clear_all_cache()
+                                    st.rerun()
 
                         # ปุ่มลบงาน (Delete Task) อนุญาตให้ Admin, ผู้สั่งการ, ผู้สร้างงาน หรือผู้รับผิดชอบงานลบได้หากสร้างผิดพลาด
                         can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
@@ -954,8 +1115,35 @@ def render_task_board(curr_user, curr_username, is_commander):
                     with st.container(border=True):
                         st.markdown(f"**{row.get('title')}**")
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
+                        
+                        # ปุ่มดูความคืบหน้า
                         if st.button("📝 ความคืบหน้า", key=f"k_prog_{row['task_id']}", use_container_width=True):
                             show_task_progress_dialog(row.to_dict(), curr_user)
+                        
+                        # ปุ่มตรวจรับงานและย้ายสถานะสำหรับระดับสั่งการ
+                        if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                            if status == "In Review":
+                                st.markdown("---")
+                                st.caption("👑 **ตรวจรับงาน / ย้ายสถานะ:**")
+                                if st.button("🏆 ตรวจรับผ่าน ➡️ Done", key=f"k_done_{row['task_id']}", type="primary", use_container_width=True):
+                                    show_approve_done_dialog(row.to_dict(), curr_user)
+                                if st.button("↩️ ส่งกลับ ➡️ In Progress / แก้ไข", key=f"k_ret_{row['task_id']}", use_container_width=True):
+                                    show_return_task_dialog(row.to_dict(), curr_user)
+                            else:
+                                with st.popover("🔄 ย้ายสถานะงาน"):
+                                    all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
+                                    target_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"k_sel_{row['task_id']}")
+                                    if st.button("ยืนยันย้าย", key=f"k_btn_mv_{row['task_id']}", use_container_width=True, type="primary"):
+                                        if target_s in ["In Progress", "Revision"] and status == "In Review":
+                                            show_return_task_dialog(row.to_dict(), curr_user)
+                                        elif target_s == "Done":
+                                            show_approve_done_dialog(row.to_dict(), curr_user)
+                                        else:
+                                            supabase.table("tasks").update({"status": target_s}).eq("task_id", row["task_id"]).execute()
+                                            log_task_action(row["task_id"], "ย้ายสถานะ", curr_username, f"ย้ายไป {target_s}")
+                                            clear_all_cache()
+                                            st.rerun()
+
                         can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
                         if can_del_k:
                             with st.expander("⚙️ ลบงาน"):
@@ -1144,16 +1332,19 @@ def show_module3_kpi_dashboard():
                         st.success("บันทึกคะแนนเรียบร้อยแล้ว!")
                         st.rerun()
 
-    # 2. รายงานผลงานเก่า & เรียกดูย้อนหลัง
+    # 2. รายงานผลงานเก่า & เรียกดูย้อนหลัง (แยกรายเดือน & สรุป KPI)
     with tab_history:
-        st.subheader("📜 รายงานผลงานเก่า & เรียกดูย้อนหลัง")
-        st.caption("ตรวจสอบว่าพนักงานคนไหน ทำงานอะไรสำเร็จไปแล้วบ้าง พร้อมรายละเอียดคะแนนความพึงพอใจและแต้ม KPI")
+        st.subheader("📜 รายงานผลงานเก่า & เรียกดูย้อนหลังประจำเดือน")
+        st.caption("ตรวจสอบว่าพนักงานคนไหน ทำงานอะไรสำเร็จไปแล้วบ้าง พร้อมรายละเอียดคะแนนความพึงพอใจและแต้ม KPI แยกรายเดือน")
 
-        ch1, ch2 = st.columns(2)
+        ch1, ch2, ch3 = st.columns([1.5, 1.2, 1.2])
         with ch1:
-            filter_emp = st.selectbox("เลือกพนักงานที่ต้องการดูรีพอร์ต:", ["ทุกคน"] + [op["username"] for op in operators], key="hist_emp_sel")
+            filter_emp = st.selectbox("👤 เลือกพนักงานที่ต้องการดูรีพอร์ต:", ["ทุกคน"] + [op["username"] for op in operators], key="hist_emp_sel")
         with ch2:
-            filter_stat = st.selectbox("สถานะงาน:", ["เฉพาะงานที่สำเร็จแล้ว (Done)", "งานทุกสถานะ"], key="hist_stat_sel")
+            available_months = ["ทุกเดือน"] + get_available_months(tasks_df)
+            filter_month = st.selectbox("📅 ประจำเดือน:", available_months, key="hist_month_sel")
+        with ch3:
+            filter_stat = st.selectbox("📌 สถานะงาน:", ["เฉพาะงานที่สำเร็จแล้ว (Done)", "งานทุกสถานะ"], key="hist_stat_sel")
 
         rep_df = tasks_df.copy() if not tasks_df.empty else pd.DataFrame()
         if not rep_df.empty:
@@ -1161,11 +1352,32 @@ def show_module3_kpi_dashboard():
                 rep_df = rep_df[rep_df["status"] == "Done"]
             if filter_emp != "ทุกคน":
                 rep_df = rep_df[rep_df["assignee_name"].fillna("").str.contains(filter_emp)]
+            if filter_month != "ทุกเดือน":
+                rep_df = rep_df[rep_df.apply(lambda r: task_matches_month(r, filter_month), axis=1)]
 
         if rep_df.empty:
-            st.info("ไม่มีประวัติผลงานตามเงื่อนไขที่เลือก")
+            st.info(f"ℹ️ ไม่มีประวัติผลงานตามเงื่อนไขที่เลือก (เดือน: {filter_month} | พนักงาน: {filter_emp})")
         else:
+            # การ์ดสรุปเมตริกประจำเดือน/ประจำเงื่อนไข
+            done_sub = rep_df[rep_df["status"] == "Done"] if "status" in rep_df.columns else pd.DataFrame()
+            cnt_done = len(done_sub)
+            cnt_ot = len(done_sub[done_sub["is_ontime"] == True]) if not done_sub.empty and "is_ontime" in done_sub.columns else 0
+            cnt_late = len(done_sub[done_sub["is_ontime"] == False]) if not done_sub.empty and "is_ontime" in done_sub.columns else 0
+            ratings = [r for r in done_sub["satisfaction_rating"].dropna() if r > 0] if not done_sub.empty and "satisfaction_rating" in done_sub.columns else []
+            avg_rt = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+            total_kpi_pts = (cnt_done * 5) + (cnt_ot * 10) - (cnt_late * 5) + int(avg_rt * 4)
+
+            with st.container(border=True):
+                st.markdown(f"##### 📊 สรุปภาพรวมผลงานย้อนหลัง: `{filter_month}` | พนักงาน: `{filter_emp}`")
+                sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+                sc1.metric("🏆 งานที่เสร็จ", f"{cnt_done} งาน")
+                sc2.metric("🟢 ส่งตรงเวลา", f"{cnt_ot} งาน")
+                sc3.metric("🔴 ส่งล่าช้า", f"{cnt_late} งาน")
+                sc4.metric("⭐ ดาวเฉลี่ย", f"{avg_rt}/5" if avg_rt > 0 else "-")
+                sc5.metric("💎 แต้ม KPI งานนี้", f"+{total_kpi_pts}" if total_kpi_pts >= 0 else str(total_kpi_pts))
+
             rep_list = []
+            thai_months = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
             for _, r in rep_df.iterrows():
                 is_ot = r.get("is_ontime")
                 ot_str = "🟢 ตรงเวลา (+10)" if is_ot is True else ("🔴 ล่าช้า (-5)" if is_ot is False else "⚪ ปกติ")
@@ -1176,6 +1388,21 @@ def show_module3_kpi_dashboard():
                 star_pt = rating * 4
                 task_kpi = base_pt + time_pt + star_pt
 
+                comp_dt = r.get("completed_at")
+                month_display = "-"
+                if comp_dt:
+                    try:
+                        p_dt = pd.to_datetime(comp_dt)
+                        month_display = f"{thai_months[p_dt.month]} {p_dt.year + 543}"
+                    except Exception:
+                        pass
+                elif r.get("due_date"):
+                    try:
+                        p_dt = pd.to_datetime(r["due_date"])
+                        month_display = f"{thai_months[p_dt.month]} {p_dt.year + 543}"
+                    except Exception:
+                        pass
+
                 rep_list.append({
                     "ชื่องาน": r.get("title"),
                     "ผู้รับผิดชอบงาน": r.get("assignee_name") or "-",
@@ -1183,6 +1410,7 @@ def show_module3_kpi_dashboard():
                     "ประเภท": r.get("task_type"),
                     "กำหนดส่ง": r.get("due_date") or "-",
                     "วันที่ส่งงานจริง": str(r.get("completed_at") or "-")[:10],
+                    "ประจำเดือน": month_display,
                     "ผลการส่ง": ot_str,
                     "คะแนนประเมิน (ดาว)": f"⭐ {rating}/5" if rating > 0 else "-",
                     "แต้ม KPI ที่ได้จากงานนี้": f"+{task_kpi}" if task_kpi >= 0 else str(task_kpi),
