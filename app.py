@@ -1034,7 +1034,7 @@ def show_submit_work_dialog(task, curr_user):
     if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_sub_{tid}", use_container_width=True):
         st.rerun()
 
-@st.dialog("🤝 ส่งต่องานให้เพื่อนร่วมงาน", width="medium")
+@st.dialog("🤝 ส่งต่องาน / จัดการผู้รับผิดชอบ", width="medium")
 def show_handover_dialog(task, curr_user):
     tid = task.get("task_id")
     title = task.get("title", "")
@@ -1043,28 +1043,29 @@ def show_handover_dialog(task, curr_user):
     ho_to = task.get("handover_to")
     ho_reason = task.get("handover_reason")
     curr_username = curr_user.get("username")
-    is_commander = user_has_role(curr_user, "ระดับสั่งการ")
+    is_commander = user_has_role(curr_user, "ระดับสั่งการ") or (curr_user.get("role") == "Admin") or (curr_username == "admin")
     operators = fetch_operators()
+    op_usernames = [op["username"] for op in operators]
     
     st.markdown(f"#### 📌 ชื่องาน: **{title}**")
     st.caption(f"ผู้รับผิดชอบปัจจุบัน: **{curr_assignee}**")
     st.divider()
     
     if ho_status == "Pending":
-        st.info(f"⏳ **สถานะ:** อยู่ระหว่างรอผู้มอบหมายอนุมัติส่งต่องานให้ **@{ho_to}**\n\nเหตุผล: *{ho_reason or '-'}*")
-        if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
-            st.caption("👑 **สิทธิ์ผู้สั่งการ: พิจารณาอนุมัติคำขอส่งต่องาน**")
+        st.info(f"⏳ **สถานะ:** อยู่ระหว่างรอผู้มอบหมายอนุมัติปรับเปลี่ยนผู้รับผิดชอบเป็น **@{ho_to}**\n\nเหตุผล: *{ho_reason or '-'}*")
+        if is_commander:
+            st.caption("👑 **สิทธิ์ผู้สั่งการ: พิจารณาอนุมัติคำขอ**")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("✅ อนุมัติส่งต่อ", key=f"dlg_ap_ho_{tid}", type="primary", use_container_width=True):
+                if st.button("✅ อนุมัติการปรับเปลี่ยน", key=f"dlg_ap_ho_{tid}", type="primary", use_container_width=True):
                     supabase.table("tasks").update({
                         "assignee_name": ho_to,
                         "assignees": ho_to,
                         "handover_status": "Approved"
                     }).eq("task_id", tid).execute()
-                    log_task_action(tid, "อนุมัติส่งต่องาน", curr_username, f"อนุมัติส่งต่อให้ {ho_to}")
+                    log_task_action(tid, "อนุมัติเปลี่ยนผู้รับผิดชอบ", curr_username, f"เปลี่ยนผู้รับผิดชอบเป็น {ho_to}")
                     clear_all_cache()
-                    st.success(f"อนุมัติส่งต่องานให้ @{ho_to} แล้ว!")
+                    st.success(f"อนุมัติเปลี่ยนผู้รับผิดชอบเป็น @{ho_to} แล้ว!")
                     st.rerun()
             with c2:
                 if st.button("❌ ปฏิเสธ", key=f"dlg_rj_ho_{tid}", use_container_width=True):
@@ -1073,33 +1074,64 @@ def show_handover_dialog(task, curr_user):
                     clear_all_cache()
                     st.rerun()
         else:
-            if st.button("❌ ขอยกเลิกคำขอส่งต่อ", key=f"dlg_cn_ho_{tid}", use_container_width=True):
+            if st.button("❌ ขอยกเลิกคำขอ", key=f"dlg_cn_ho_{tid}", use_container_width=True):
                 supabase.table("tasks").update({"handover_status": "None", "handover_to": None, "handover_reason": None}).eq("task_id", tid).execute()
-                log_task_action(tid, "ยกเลิกการส่งต่องาน", curr_username, "ยกเลิกคำขอ")
+                log_task_action(tid, "ยกเลิกคำขอส่งต่องาน", curr_username, "ยกเลิกคำขอ")
                 clear_all_cache()
                 st.rerun()
     else:
-        colleague_ops = [op["username"] for op in operators if op["username"] != curr_username]
-        if not colleague_ops:
-            st.warning("ไม่พบรายชื่อเพื่อนร่วมงานอื่นในระบบ")
+        if not op_usernames:
+            st.warning("ไม่พบรายชื่อผู้ปฏิบัติงานในระบบ")
         else:
+            curr_list = [n.strip() for n in str(curr_assignee).split(",") if n.strip() in op_usernames]
+            
             with st.form(f"form_ho_{tid}"):
-                to_op = st.selectbox("เลือกเพื่อนร่วมงานที่จะรับมอบหมายต่อ:", colleague_ops)
-                ho_r = st.text_area("เหตุผลในการขอส่งต่องาน *:", placeholder="ระบุเหตุผล เช่น ติดภารกิจด่วน, ถ่ายทอดงานตามความเชี่ยวชาญ...")
-                submitted = st.form_submit_button("📤 ยืนยันการขอส่งต่องาน (รออนุมัติ)", type="primary", use_container_width=True)
+                st.markdown("##### 👥 เลือกผู้รับผิดชอบงาน (เพิ่มได้มากกว่า 1 คน หรือกด ✖️ เพื่อลบออก):")
+                st.caption("🔒 *ระบบจำกัดให้เลือกได้เฉพาะ User ยศปฏิบัติงานเท่านั้น*")
+                
+                selected_assignees = st.multiselect(
+                    "รายชื่อผู้รับผิดชอบงาน:",
+                    options=op_usernames,
+                    default=curr_list,
+                    placeholder="คลิกเลือกผู้ปฏิบัติงาน..."
+                )
+                
+                ho_r = st.text_area(
+                    "เหตุผลในการปรับเปลี่ยน / ส่งต่องาน *:",
+                    placeholder="ระบุเหตุผล เช่น เพิ่มผู้ช่วยงาน, ถ่ายทอดงานตามความเชี่ยวชาญ, สลับผู้รับผิดชอบ..."
+                )
+                
+                btn_label = "💾 บันทึกการแก้ไขผู้รับผิดชอบทันที" if is_commander else "📤 ยืนยันส่งคำขอปรับเปลี่ยน (รออนุมัติ)"
+                submitted = st.form_submit_button(btn_label, type="primary", use_container_width=True)
+                
                 if submitted:
-                    if not ho_r.strip():
-                        st.error("กรุณาระบุเหตุผลการส่งต่องาน")
+                    if not selected_assignees:
+                        st.error("กรุณาเลือกผู้รับผิดชอบงานอย่างน้อย 1 คน")
+                    elif not ho_r.strip():
+                        st.error("กรุณาระบุเหตุผลการปรับเปลี่ยนผู้รับผิดชอบ")
                     else:
-                        supabase.table("tasks").update({
-                            "handover_to": to_op,
-                            "handover_reason": ho_r.strip(),
-                            "handover_status": "Pending"
-                        }).eq("task_id", tid).execute()
-                        log_task_action(tid, "ขอส่งต่องาน", curr_username, f"ขอส่งต่อให้ @{to_op} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
-                        clear_all_cache()
-                        st.success("✅ ส่งคำขอส่งต่องานแล้ว! กำลังรอผู้มอบหมายอนุมัติ")
-                        st.rerun()
+                        new_assignee_str = ", ".join(selected_assignees)
+                        if is_commander:
+                            supabase.table("tasks").update({
+                                "assignee_name": new_assignee_str,
+                                "assignees": new_assignee_str,
+                                "handover_status": "Approved"
+                            }).eq("task_id", tid).execute()
+                            log_task_action(tid, "แก้ไขผู้รับผิดชอบงาน", curr_username, f"ปรับเปลี่ยนผู้รับผิดชอบเป็น: {new_assignee_str} (เหตุผล: {ho_r.strip()})")
+                            clear_all_cache()
+                            st.success(f"✅ บันทึกผู้รับผิดชอบงานเรียบร้อย: {new_assignee_str}")
+                            st.rerun()
+                        else:
+                            supabase.table("tasks").update({
+                                "handover_to": new_assignee_str,
+                                "handover_reason": ho_r.strip(),
+                                "handover_status": "Pending"
+                            }).eq("task_id", tid).execute()
+                            log_task_action(tid, "ขอปรับเปลี่ยนผู้รับผิดชอบ", curr_username, f"ขอเปลี่ยนเป็น: {new_assignee_str} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
+                            clear_all_cache()
+                            st.success(f"✅ ส่งคำขอปรับเปลี่ยนผู้รับผิดชอบเป็น {new_assignee_str} แล้ว! กำลังรอผู้มอบหมายอนุมัติ")
+                            st.rerun()
+                            
     if st.button("✖️ ปิดหน้าต่าง", key=f"cls_ho_{tid}", use_container_width=True):
         st.rerun()
 
@@ -1371,18 +1403,18 @@ def show_module1_commander_page():
                 for _, row in handovers.iterrows():
                     with st.container(border=True):
                         st.markdown(f"**งาน:** {row['title']} | **กำหนดส่ง:** {row.get('due_date') or '-'}")
-                        st.write(f"ผู้รับผิดชอบเดิม: `{row.get('assignee_name') or '-'}` ➡️ ส่งต่อให้: `{row.get('handover_to') or '-'}`")
+                        st.write(f"ผู้รับผิดชอบเดิม: `{row.get('assignee_name') or '-'}` ➡️ ปรับเปลี่ยนเป็น: `{row.get('handover_to') or '-'}`")
                         st.caption(f"เหตุผล: {row.get('handover_reason') or '-'}")
                         c1, c2 = st.columns(2)
                         with c1:
-                            if st.button("✅ อนุมัติส่งต่อ", key=f"ap_ho_{row['task_id']}", use_container_width=True, type="primary"):
+                            if st.button("✅ อนุมัติการปรับเปลี่ยน", key=f"ap_ho_{row['task_id']}", use_container_width=True, type="primary"):
                                 new_assignee = row.get("handover_to")
                                 supabase.table("tasks").update({
                                     "assignee_name": new_assignee,
                                     "assignees": new_assignee,
                                     "handover_status": "Approved"
                                 }).eq("task_id", row["task_id"]).execute()
-                                log_task_action(row["task_id"], "อนุมัติส่งต่องาน", curr_user.get("username"), f"ส่งต่อให้ {new_assignee}")
+                                log_task_action(row["task_id"], "อนุมัติเปลี่ยนผู้รับผิดชอบ", curr_user.get("username"), f"เปลี่ยนเป็น {new_assignee}")
                                 clear_all_cache()
                                 st.rerun()
                         with c2:
@@ -1699,26 +1731,47 @@ def render_task_board(curr_user, curr_username, is_commander):
                                         clear_all_cache()
                                         st.rerun()
                             else:
-                                with st.expander("🤝 ส่งต่องานให้เพื่อนร่วมงาน (ยศปฏิบัติงาน)"):
-                                    st.caption("เลือกเพื่อนร่วมงานที่ต้องการส่งต่องานให้ และระบุเหตุผลเพื่อรอผู้มอบหมายอนุมัติ")
-                                    colleague_ops = [op["username"] for op in operators if op["username"] != curr_username]
-                                    if not colleague_ops:
-                                        st.caption("ไม่มีรายชื่อเพื่อนร่วมงานอื่นในระบบ")
-                                    else:
-                                        to_op = st.selectbox("เลือกผู้รับมอบหมายต่อ:", colleague_ops, key=f"ho_{row['task_id']}")
-                                        ho_r = st.text_input("เหตุผลการส่งต่องาน *:", key=f"hr_{row['task_id']}")
-                                        if st.button("📤 ยืนยันส่งต่องาน (รออนุมัติ)", key=f"hbtn_{row['task_id']}", use_container_width=True, type="primary"):
-                                            if not ho_r.strip():
-                                                st.error("กรุณาระบุเหตุผลการส่งต่องาน")
+                                with st.expander("🤝 ส่งต่องาน / จัดการผู้รับผิดชอบ (ยศปฏิบัติงาน)"):
+                                    st.caption("สามารถเลือกเพิ่มผู้รับผิดชอบได้มากกว่า 1 คน หรือกด ✖️ เพื่อลบออก (เฉพาะยศปฏิบัติงาน)")
+                                    op_unames = [op["username"] for op in operators]
+                                    curr_ass_list = [n.strip() for n in str(row.get("assignee_name", "")).split(",") if n.strip() in op_unames]
+                                    
+                                    new_ops = st.multiselect(
+                                        "รายชื่อผู้รับผิดชอบงาน:",
+                                        options=op_unames,
+                                        default=curr_ass_list,
+                                        key=f"ho_multi_{row['task_id']}"
+                                    )
+                                    ho_r = st.text_input("เหตุผลการปรับเปลี่ยน / ส่งต่องาน *:", key=f"hr_{row['task_id']}")
+                                    
+                                    is_cmd = is_commander or curr_user.get("role") == "Admin" or curr_username == "admin"
+                                    btn_lbl = "💾 บันทึกการแก้ไขทันที" if is_cmd else "📤 ยืนยันส่งคำขอ (รออนุมัติ)"
+                                    if st.button(btn_lbl, key=f"hbtn_{row['task_id']}", use_container_width=True, type="primary"):
+                                        if not new_ops:
+                                            st.error("กรุณาเลือกผู้รับผิดชอบอย่างน้อย 1 คน")
+                                        elif not ho_r.strip():
+                                            st.error("กรุณาระบุเหตุผลการปรับเปลี่ยนผู้รับผิดชอบ")
+                                        else:
+                                            new_str = ", ".join(new_ops)
+                                            if is_cmd:
+                                                supabase.table("tasks").update({
+                                                    "assignee_name": new_str,
+                                                    "assignees": new_str,
+                                                    "handover_status": "Approved"
+                                                }).eq("task_id", row["task_id"]).execute()
+                                                log_task_action(row["task_id"], "แก้ไขผู้รับผิดชอบงาน", curr_username, f"ปรับเปลี่ยนผู้รับผิดชอบเป็น: {new_str} (เหตุผล: {ho_r.strip()})")
+                                                clear_all_cache()
+                                                st.success(f"✅ บันทึกผู้รับผิดชอบเป็น {new_str} เรียบร้อยแล้ว!")
+                                                st.rerun()
                                             else:
                                                 supabase.table("tasks").update({
-                                                    "handover_to": to_op,
+                                                    "handover_to": new_str,
                                                     "handover_reason": ho_r.strip(),
                                                     "handover_status": "Pending"
                                                 }).eq("task_id", row["task_id"]).execute()
-                                                log_task_action(row["task_id"], "ขอส่งต่องาน", curr_username, f"ขอส่งต่อให้ @{to_op} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
+                                                log_task_action(row["task_id"], "ขอปรับเปลี่ยนผู้รับผิดชอบ", curr_username, f"ขอเปลี่ยนเป็น: {new_str} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
                                                 clear_all_cache()
-                                                st.success("✅ ส่งคำขอส่งต่องานแล้ว! กำลังรอผู้มอบหมายอนุมัติ")
+                                                st.success(f"✅ ส่งคำขอปรับเปลี่ยนผู้รับผิดชอบเป็น {new_str} แล้ว! กำลังรอผู้มอบหมายอนุมัติ")
                                                 st.rerun()
 
                         # 3. ปุ่มดำเนินงานของผู้ปฏิบัติงาน
