@@ -248,6 +248,176 @@ def log_task_action(task_id, action, performed_by, details=""):
     except Exception:
         pass
 
+def fetch_task_logs(task_id):
+    """ดึงข้อมูลบันทึกความคืบหน้าและประวัติการทำงานทั้งหมดของงานนี้"""
+    try:
+        res = supabase.table("task_logs").select("*").eq("task_id", task_id).order("created_at", desc=False).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+def format_datetime_thai(dt_val):
+    """แปลงเวลาเป็นเวลาประเทศไทย (UTC+7) รูปแบบอ่านง่าย"""
+    if not dt_val:
+        return "-"
+    try:
+        dt = pd.to_datetime(dt_val)
+        if dt.tz is None:
+            dt = dt + pd.Timedelta(hours=7)
+        else:
+            dt = dt.tz_convert("Asia/Bangkok")
+        return dt.strftime("%d/%m/%Y %H:%M น.")
+    except Exception:
+        return str(dt_val)[:16]
+
+def user_can_edit_task_progress(curr_user, task):
+    """ตรวจสอบสิทธิ์: เพิ่มเติมแก้ไขบันทึกได้เฉพาะผู้รับผิดชอบงาน และ User ระดับสั่งการ / Admin เท่านั้น"""
+    if not curr_user or not task:
+        return False
+    # 1. Admin
+    if curr_user.get("role") == "Admin" or curr_user.get("username") == "admin":
+        return True
+    # 2. ผู้มียศ 'ระดับสั่งการ'
+    if user_has_role(curr_user, "ระดับสั่งการ"):
+        return True
+    # 3. ผู้รับผิดชอบงาน (Assignee)
+    curr_username = str(curr_user.get("username", "")).strip()
+    assignees_str = str(task.get("assignee_name") or task.get("assignees") or "")
+    if curr_username and curr_username in assignees_str:
+        return True
+    return False
+
+@st.dialog("📝 บันทึกความคืบหน้า & สรุปผลงาน", width="large")
+def show_task_progress_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "ไม่มีชื่อ")
+    status = task.get("status", "To Do")
+    assignee = task.get("assignee_name", "-")
+    creator = task.get("creator_username", "-")
+    due_date = task.get("due_date", "-")
+    desc = task.get("description", "-")
+    attachment = task.get("attachment_url")
+
+    can_edit = user_can_edit_task_progress(curr_user, task)
+
+    # 1. กล่องสรุปภาพรวมของงาน
+    with st.container(border=True):
+        st.markdown(f"#### 📌 {title}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f"**สถานะ:** `{status}`")
+        c2.markdown(f"**ผู้รับผิดชอบ:** `{assignee}`")
+        c3.markdown(f"**ผู้สั่งการ:** `@{creator}`")
+        c4.markdown(f"**กำหนดส่ง:** `{due_date}`")
+        if desc and desc != "-":
+            st.caption(f"**ขอบเขตงาน (Scope):** {desc}")
+        if attachment:
+            st.markdown(f"📎 **ไฟล์แนบ / ลิงก์:** [{attachment}]({attachment})")
+
+    st.markdown("---")
+
+    # 2. ประวัติการรายงานความคืบหน้าและการปฏิบัติงานย้อนหลังทั้งหมด
+    st.markdown("#### 📜 ประวัติความคืบหน้า & บันทึกงานย้อนหลังทั้งหมด")
+    logs = fetch_task_logs(tid)
+
+    if not logs:
+        st.info("ℹ️ ยังไม่มีบันทึกความคืบหน้าสำหรับงานนี้ สามารถเพิ่มบันทึกแรกได้ด้านล่าง")
+    else:
+        for l in logs:
+            action = l.get("action", "บันทึก")
+            performed_by = l.get("performed_by", "-")
+            details = l.get("details", "")
+            created_at_fmt = format_datetime_thai(l.get("created_at"))
+
+            badge_style = "background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;"
+            if "ความคืบหน้า" in action:
+                badge_style = "background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;"
+            elif "สรุป" in action:
+                badge_style = "background:#dcfce7; color:#166534; border:1px solid #bbf7d0;"
+            elif "ปัญหา" in action or "อุปสรรค" in action:
+                badge_style = "background:#fee2e2; color:#991b1b; border:1px solid #fecaca;"
+            elif "สร้างงาน" in action:
+                badge_style = "background:#f1f5f9; color:#475569;"
+            elif "อนุมัติ" in action:
+                badge_style = "background:#fef3c7; color:#92400e; border:1px solid #fde68a;"
+
+            with st.container(border=True):
+                head_col, time_col = st.columns([3.2, 1.8])
+                with head_col:
+                    st.markdown(f"""
+                        <span class="badge-status" style="{badge_style} font-weight:700;">{action}</span>
+                        <span style="font-size:0.9rem; margin-left:6px; color:#334155;">โดย <b>@{performed_by}</b></span>
+                    """, unsafe_allow_html=True)
+                with time_col:
+                    st.caption(f"🕒 {created_at_fmt}")
+
+                st.markdown(f"<div style='margin-top:6px; font-size:0.95rem; color:#1e293b; line-height:1.5;'>{details if details else '-'}</div>", unsafe_allow_html=True)
+
+                # สิทธิ์แก้ไขหรือลบบันทึก: เฉพาะผู้เขียนบันทึกนั้นๆ หรือ User ระดับสั่งการ / Admin
+                is_author = (curr_user.get("username") == performed_by)
+                has_modify_right = is_author or user_has_role(curr_user, "ระดับสั่งการ") or (curr_user.get("role") == "Admin") or (curr_user.get("username") == "admin")
+                if can_edit and has_modify_right and action not in ["สร้างงานใหม่"]:
+                    with st.expander("✏️ แก้ไข / ลบบันทึกนี้"):
+                        new_txt = st.text_area("แก้ไขเนื้อหา:", value=details, key=f"ed_txt_{l['log_id']}")
+                        btn_c1, btn_c2 = st.columns([1, 1])
+                        with btn_c1:
+                            if st.button("บันทึกการแก้ไข", key=f"btn_sv_{l['log_id']}", type="primary", use_container_width=True):
+                                if new_txt.strip():
+                                    supabase.table("task_logs").update({"details": new_txt.strip()}).eq("log_id", l["log_id"]).execute()
+                                    st.success("บันทึกการแก้ไขเรียบร้อยแล้ว!")
+                                    st.rerun(scope="fragment")
+                                else:
+                                    st.warning("กรุณาระบุข้อความ")
+                        with btn_c2:
+                            if st.button("🗑️ ลบบันทึกนี้", key=f"btn_dl_{l['log_id']}", use_container_width=True):
+                                supabase.table("task_logs").delete().eq("log_id", l["log_id"]).execute()
+                                st.success("ลบบันทึกเรียบร้อยแล้ว!")
+                                st.rerun(scope="fragment")
+
+    st.markdown("---")
+
+    # 3. ฟอร์มเพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่ (เฉพาะผู้รับผิดชอบงาน และ User ระดับสั่งการ)
+    if can_edit:
+        st.markdown("#### ➕ เพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่")
+        with st.form(f"add_progress_form_{tid}", clear_on_submit=True):
+            f_col1, f_col2 = st.columns([1.5, 2.5])
+            with f_col1:
+                log_type = st.selectbox("ประเภทบันทึก:", [
+                    "📌 รายงานความคืบหน้า",
+                    "📝 สรุปงาน / ส่งมอบงาน",
+                    "⚠️ ปัญหา / อุปสรรค",
+                    "💡 บันทึก / หมายเหตุทั่วไป"
+                ])
+            with f_col2:
+                st.caption(f"ผู้บันทึก: **@{curr_user.get('username')}** (มีสิทธิ์บันทึก/แก้ไข)")
+
+            progress_detail = st.text_area("รายละเอียดความคืบหน้า / รายงานสรุปงาน *:", placeholder="ระบุสิ่งที่ทำเสร็จแล้ว ขั้นตอนต่อไป ผลลัพธ์ หรือลิงก์เอกสาร...")
+
+            submitted = st.form_submit_button("💾 บันทึกรายงานความคืบหน้า", type="primary", use_container_width=True)
+
+            if submitted:
+                if not progress_detail.strip():
+                    st.error("กรุณาระบุรายละเอียดก่อนกดบันทึก")
+                else:
+                    try:
+                        clean_action = log_type.split(" ", 1)[1] if " " in log_type else log_type
+                        supabase.table("task_logs").insert({
+                            "task_id": tid,
+                            "action": clean_action,
+                            "performed_by": curr_user.get("username"),
+                            "details": progress_detail.strip()
+                        }).execute()
+                        clear_all_cache()
+                        st.success("✅ บันทึกรายงานความคืบหน้าสำเร็จแล้ว!")
+                        st.rerun(scope="fragment")
+                    except Exception as e:
+                        st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
+    else:
+        st.info(f"🔒 **สิทธิ์การบันทึก/แก้ไข:** เฉพาะผู้รับผิดชอบงานนี้ (`{assignee}`) และผู้มียศ **ระดับสั่งการ** เท่านั้น (คุณสามารถกดดูประวัติย้อนหลังได้ทั้งหมด)")
+
+    st.write("")
+    if st.button("✖️ ปิดหน้าต่าง (Close)", key=f"cls_dlg_{tid}", use_container_width=True):
+        st.rerun()
+
 # --- Authentication & Registration Page (โลโก้กะทัดรัด & ลายน้ำ Watermark บนแบคกราว) ---
 
 def show_auth_page():
@@ -470,10 +640,13 @@ def show_module1_commander_page():
             if not recent_t.empty:
                 for _, r in recent_t.iterrows():
                     with st.container(border=True):
-                        c_inf, c_del = st.columns([4, 1.2])
+                        c_inf, c_prg, c_del = st.columns([3.5, 1.2, 1.2])
                         with c_inf:
                             st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
                             st.caption(f"ผู้สั่งการ: @{r.get('creator_username') or '-'} | กำหนดส่ง: {r.get('due_date') or '-'}")
+                        with c_prg:
+                            if st.button("📝 ความคืบหน้า", key=f"m1_prg_{r['task_id']}", use_container_width=True):
+                                show_task_progress_dialog(r.to_dict(), curr_user)
                         with c_del:
                           with st.expander("🗑️ ลบงาน"):
                             if st.button("ยืนยันลบ", key=f"m1_del_{r['task_id']}", type="primary", use_container_width=True):
@@ -674,7 +847,7 @@ def render_task_board(curr_user, curr_username, is_commander):
             handover_tag = '<span class="badge-status" style="background:#ffedd5; color:#c2410c;">🔄 รออนุมัติส่งต่อ</span>' if row.get("handover_status") == "Pending" else ""
 
             with st.container(border=True):
-                col_info, col_act = st.columns([3.5, 1.2])
+                col_info, col_act = st.columns([3.1, 1.9])
                 with col_info:
                     st.markdown(f"""
                         <div style="font-size: 1.05rem; font-weight: 700; color: #1e293b;">
@@ -691,11 +864,18 @@ def render_task_board(curr_user, curr_username, is_commander):
                     """, unsafe_allow_html=True)
                 
                 with col_act:
-                    with st.popover("⚙️ จัดการงาน"):
-                        st.markdown(f"**ชื่องาน:** {row.get('title')}")
-                        st.caption(f"รายละเอียด: {row.get('description') or 'ไม่มีรายละเอียด'}")
-                        if row.get("attachment_url"):
-                            st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
+                    c_act1, c_act2 = st.columns([1.1, 1])
+                    with c_act1:
+                        if st.button("📝 ความคืบหน้า", key=f"prog_{row['task_id']}", use_container_width=True):
+                            show_task_progress_dialog(row.to_dict(), curr_user)
+                    with c_act2:
+                        with st.popover("⚙️ จัดการ", use_container_width=True):
+                            st.markdown(f"**ชื่องาน:** {row.get('title')}")
+                            if st.button("📝 เปิดดูความคืบหน้า / สรุปงาน", key=f"pop_prog_{row['task_id']}", use_container_width=True):
+                                show_task_progress_dialog(row.to_dict(), curr_user)
+                            st.caption(f"รายละเอียด: {row.get('description') or 'ไม่มีรายละเอียด'}")
+                            if row.get("attachment_url"):
+                                st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
 
                         st.divider()
 
@@ -774,6 +954,8 @@ def render_task_board(curr_user, curr_username, is_commander):
                     with st.container(border=True):
                         st.markdown(f"**{row.get('title')}**")
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
+                        if st.button("📝 ความคืบหน้า", key=f"k_prog_{row['task_id']}", use_container_width=True):
+                            show_task_progress_dialog(row.to_dict(), curr_user)
                         can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
                         if can_del_k:
                             with st.expander("⚙️ ลบงาน"):
@@ -871,10 +1053,13 @@ def show_module3_kpi_dashboard():
             st.caption("💡 เมื่อลบงาน งานจะถูกตัดออกจากระบบและลดจำนวนงานในแดชบอร์ด KPI ทันที")
             for _, r in tasks_df.iterrows():
                 with st.container(border=True):
-                    c_info, c_del = st.columns([4, 1.2])
+                    c_info, c_prg, c_del = st.columns([3.5, 1.2, 1.2])
                     with c_info:
                         st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: **{r.get('assignee_name') or '-'}**")
                         st.caption(f"ผู้สั่งการ: @{r.get('creator_username') or '-'} | กำหนดส่ง: {r.get('due_date') or '-'}")
+                    with c_prg:
+                        if st.button("📝 ความคืบหน้า", key=f"m3_prg_{r['task_id']}", use_container_width=True):
+                            show_task_progress_dialog(r.to_dict(), curr_user)
                     with c_del:
                         if st.button("🗑️ ยืนยันลบงานนี้", key=f"m3_del_{r['task_id']}", type="primary", use_container_width=True):
                             if delete_task_record(r["task_id"], r.get("title", "")):
@@ -1018,11 +1203,14 @@ def show_module3_kpi_dashboard():
                 type="primary"
             )
 
-            with st.expander("🗑️ ลบงานในรายงานนี้ (กรณีพบงานที่สร้างผิดพลาด / ไม่ได้ทำ)"):
+            with st.expander("🔍 ดูความคืบหน้า / ลบงานในรายงานนี้ (กรณีพบงานที่สร้างผิดพลาด)"):
                 for _, r in rep_df.iterrows():
-                    c_h1, c_h2 = st.columns([4, 1.2])
+                    c_h1, c_hp, c_h2 = st.columns([3.5, 1.2, 1.2])
                     with c_h1:
                         st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
+                    with c_hp:
+                        if st.button("📝 ความคืบหน้า", key=f"rep_prg_{r['task_id']}", use_container_width=True):
+                            show_task_progress_dialog(r.to_dict(), curr_user)
                     with c_h2:
                         if st.button("ยืนยันลบ", key=f"rep_del_{r['task_id']}", use_container_width=True):
                             if delete_task_record(r["task_id"], r.get("title", "")):
