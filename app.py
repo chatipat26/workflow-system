@@ -76,15 +76,15 @@ st.markdown(f"""
     /* พื้นหลังหน้าจอหลักพร้อมลายน้ำ SVV (Watermark Background) */
     .stApp {{
         background-color: #f8fafc !important;
+        background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
+        background-repeat: no-repeat !important;
+        background-position: center 42% !important;
+        background-size: min(760px, 92vw) auto !important;
+        background-attachment: fixed !important;
     }}
 
     [data-testid="stAppViewContainer"] {{
         background-color: transparent !important;
-        background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
-        background-repeat: no-repeat !important;
-        background-position: center 38% !important;
-        background-size: min(480px, 86vw) min(480px, 86vw) !important;
-        background-attachment: fixed !important;
     }}
 
     section.main,
@@ -146,12 +146,12 @@ st.markdown(f"""
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
     div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background-color: rgba(255, 255, 255, 0.92) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
+        background-color: rgba(255, 255, 255, 0.88) !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
         border: 1.5px solid #bae6fd !important;
         border-radius: 16px !important;
-        box-shadow: 0 10px 25px rgba(2, 132, 199, 0.08) !important;
+        box-shadow: 0 10px 30px rgba(2, 132, 199, 0.10) !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -255,15 +255,15 @@ def show_auth_page():
         </div>
     """, unsafe_allow_html=True)
 
-    tab_login, tab_register, tab_reset = st.tabs([
-        "🔒 เข้าสู่ระบบ", 
-        "📝 สมัครสมาชิกใหม่", 
-        "🔑 ลืม / เปลี่ยนรหัสผ่าน"
-    ])
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        tab_login, tab_register, tab_reset = st.tabs([
+            "🔒 เข้าสู่ระบบ", 
+            "📝 สมัครสมาชิกใหม่", 
+            "🔑 ลืม / เปลี่ยนรหัสผ่าน"
+        ])
 
-    with tab_login:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        with tab_login:
             with st.container(border=True):
                 st.markdown("""
                     <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
@@ -300,9 +300,7 @@ def show_auth_page():
                             except Exception as e:
                                 st.error(f"เกิดข้อผิดพลาด: {e}")
 
-    with tab_register:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        with tab_register:
             with st.container(border=True):
                 st.markdown("""
                     <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
@@ -345,9 +343,7 @@ def show_auth_page():
                                 clear_all_cache()
                                 st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
 
-    with tab_reset:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        with tab_reset:
             with st.container(border=True):
                 st.markdown("""
                     <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
