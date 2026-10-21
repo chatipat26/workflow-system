@@ -335,13 +335,16 @@ def show_auth_page():
                                     "fullname": r_name.strip(),
                                     "email": r_email.strip(),
                                     "phone": r_phone.strip(),
-                                    "role": "Employee",
+                                    "role": "User",
                                     "roles": "ปฏิบัติงาน",
                                     "is_approved": False
                                 }
-                                supabase.table("app_users").insert(new_u).execute()
-                                clear_all_cache()
-                                st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
+                                try:
+                                    supabase.table("app_users").insert(new_u).execute()
+                                    clear_all_cache()
+                                    st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
+                                except Exception as e:
+                                    st.error(f"เกิดข้อผิดพลาดในการสมัครสมาชิก: {e}")
 
         with tab_reset:
             with st.container(border=True):
