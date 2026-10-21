@@ -7,18 +7,21 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # --- Logo & Watermark Helper ---
-def get_logo_base64():
-    """แปลงไฟล์โลโก้เป็น Base64 สำหรับทำลายน้ำ (Watermark)"""
-    for path in ["logo.jpg", "logo.png", "workflow_system/logo.jpg"]:
-        if os.path.exists(path):
-            try:
-                with open(path, "rb") as f:
-                    return base64.b64encode(f.read()).decode()
-            except Exception:
-                pass
+def get_file_base64(filepaths):
+    """แปลงไฟล์ภาพเป็น Base64 สำหรับแสดงผลและทำลายน้ำ (Watermark)"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    for p in filepaths:
+        for candidate in [p, os.path.join(base_dir, p), os.path.join(base_dir, "..", p)]:
+            if os.path.exists(candidate):
+                try:
+                    with open(candidate, "rb") as f:
+                        return base64.b64encode(f.read()).decode()
+                except Exception:
+                    pass
     return ""
 
-LOGO_B64 = get_logo_base64()
+LOGO_B64 = get_file_base64(["logo.jpg", "logo.png"])
+WATERMARK_B64 = get_file_base64(["watermark.png"]) or LOGO_B64
 
 # --- Supabase Connection ---
 @st.cache_resource
@@ -99,32 +102,12 @@ st.markdown(f"""
     .badge-overdue {{ background-color: #fee2e2; color: #991b1b; font-weight: 700; }}
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
-    /* ลายน้ำ Watermark สำหรับหน้าล็อกอิน */
-    .auth-box-watermark {{
-        position: relative;
-        overflow: hidden;
-        border: 1px solid #bae6fd;
-        border-radius: 14px;
-        background: #ffffff;
-        padding: 24px;
-        box-shadow: 0 6px 18px rgba(2, 132, 199, 0.06);
-    }}
-    .auth-watermark-bg {{
-        position: absolute;
-        right: -25px;
-        bottom: -25px;
-        width: 190px;
-        height: 190px;
-        opacity: 0.07;
-        background-image: url('data:image/jpeg;base64,{LOGO_B64}');
-        background-size: contain;
-        background-repeat: no-repeat;
-        pointer-events: none;
-        z-index: 0;
-    }}
-    .auth-content {{
-        position: relative;
-        z-index: 1;
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(6px) !important;
+        border: 1px solid #bae6fd !important;
+        border-radius: 14px !important;
+        box-shadow: 0 6px 20px rgba(2, 132, 199, 0.08) !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -213,16 +196,43 @@ def log_task_action(task_id, action, performed_by, details=""):
 # --- Authentication & Registration Page (มีโลโก้ & ลายน้ำ Watermark & โทนสีฟ้า) ---
 
 def show_auth_page():
+    # Watermark Overlay สำหรับหน้าออเต็น (Authentication Page)
+    if WATERMARK_B64:
+        st.markdown(f"""
+            <div style="
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: min(540px, 86vw);
+                height: min(540px, 86vw);
+                background-image: url('data:image/png;base64,{WATERMARK_B64}');
+                background-repeat: no-repeat;
+                background-position: center;
+                background-size: contain;
+                opacity: 0.16;
+                pointer-events: none;
+                z-index: 999;
+            "></div>
+        """, unsafe_allow_html=True)
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_file = None
+    for cand in ["logo.jpg", os.path.join(base_dir, "logo.jpg"), "logo.png"]:
+        if os.path.exists(cand):
+            logo_file = cand
+            break
+
     # แสดงโลโก้ตรงกลาง
     col1, col2, col3 = st.columns([1.6, 1, 1.6])
     with col2:
-        if os.path.exists("logo.jpg"):
-            st.image("logo.jpg", use_container_width=True)
+        if logo_file:
+            st.image(logo_file, use_container_width=True)
     
     st.markdown("""
-        <div style="text-align: center; margin-bottom: 1.25rem;">
-            <h2 style="color: #0369a1; font-weight: 700; margin: 4px 0;">TEAM WORKFLOW SVV</h2>
-            <p style="color: #64748b; font-size: 0.95rem;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <h2 style="color: #0369a1; font-weight: 800; margin: 4px 0; letter-spacing: 0.5px;">TEAM WORKFLOW SVV</h2>
+            <p style="color: #64748b; font-size: 0.95rem; font-weight: 500;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -235,118 +245,112 @@ def show_auth_page():
     with tab_login:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown(f"""
-                <div class="auth-box-watermark">
-                    <div class="auth-watermark-bg"></div>
-                    <div class="auth-content">
-            """, unsafe_allow_html=True)
-            
-            st.subheader("เข้าสู่ระบบ")
-            username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
-            password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
-            
-            if st.button("เข้าสู่ระบบ", use_container_width=True, type="primary"):
-                if not username or not password:
-                    st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
-                else:
-                    try:
-                        res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
-                        if res.data and len(res.data) > 0:
-                            user = res.data[0]
-                            is_approved = user.get("is_approved")
-                            if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
-                                st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
+            with st.container(border=True):
+                st.markdown("""
+                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
+                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">🔒 เข้าสู่ระบบ</h3>
+                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">SVV Portal</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
+                password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
+                
+                if st.button("เข้าสู่ระบบ", use_container_width=True, type="primary"):
+                    if not username or not password:
+                        st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
+                    else:
+                        try:
+                            res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
+                            if res.data and len(res.data) > 0:
+                                user = res.data[0]
+                                is_approved = user.get("is_approved")
+                                if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
+                                    st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
+                                else:
+                                    st.session_state.logged_in = True
+                                    st.session_state.user = user
+                                    clear_all_cache()
+                                    st.rerun()
                             else:
-                                st.session_state.logged_in = True
-                                st.session_state.user = user
-                                clear_all_cache()
-                                st.rerun()
-                        else:
-                            st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
-                    except Exception as e:
-                        st.error(f"เกิดข้อผิดพลาด: {e}")
-            
-            st.markdown('</div></div>', unsafe_allow_html=True)
+                                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                        except Exception as e:
+                            st.error(f"เกิดข้อผิดพลาด: {e}")
 
     with tab_register:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown(f"""
-                <div class="auth-box-watermark">
-                    <div class="auth-watermark-bg"></div>
-                    <div class="auth-content">
-            """, unsafe_allow_html=True)
-            
-            st.subheader("ลงทะเบียนพนักงานใหม่")
-            with st.form("reg_form", clear_on_submit=True):
-                r_user = st.text_input("Username *")
-                r_name = st.text_input("ชื่อ - สกุล *")
-                r_email = st.text_input("Email *")
-                r_phone = st.text_input("เบอร์โทรศัพท์ *")
-                r_p1 = st.text_input("รหัสผ่าน *", type="password")
-                r_p2 = st.text_input("ยืนยันรหัสผ่าน *", type="password")
-                
-                if st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True, type="primary"):
-                    if not (r_user and r_name and r_email and r_phone and r_p1):
-                        st.error("กรุณากรอกข้อมูลให้ครบทุกช่อง")
-                    elif r_p1 != r_p2:
-                        st.error("รหัสผ่านไม่ตรงกัน")
-                    else:
-                        check = supabase.table("app_users").select("username").eq("username", r_user).execute()
-                        if check.data:
-                            st.error("Username นี้มีอยู่ในระบบแล้ว")
+            with st.container(border=True):
+                st.markdown("""
+                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
+                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">📝 สมัครสมาชิกใหม่</h3>
+                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">ลงทะเบียน</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                with st.form("reg_form", clear_on_submit=True):
+                    r_user = st.text_input("Username *")
+                    r_name = st.text_input("ชื่อ - สกุล *")
+                    r_email = st.text_input("Email *")
+                    r_phone = st.text_input("เบอร์โทรศัพท์ *")
+                    r_p1 = st.text_input("รหัสผ่าน *", type="password")
+                    r_p2 = st.text_input("ยืนยันรหัสผ่าน *", type="password")
+                    
+                    if st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True, type="primary"):
+                        if not (r_user and r_name and r_email and r_phone and r_p1):
+                            st.error("กรุณากรอกข้อมูลให้ครบทุกช่อง")
+                        elif r_p1 != r_p2:
+                            st.error("รหัสผ่านไม่ตรงกัน")
                         else:
-                            new_u = {
-                                "username": r_user.strip(),
-                                "password_hash": r_p1,
-                                "fullname": r_name.strip(),
-                                "email": r_email.strip(),
-                                "phone": r_phone.strip(),
-                                "role": "Employee",
-                                "roles": "ปฏิบัติงาน",
-                                "is_approved": False
-                            }
-                            supabase.table("app_users").insert(new_u).execute()
-                            clear_all_cache()
-                            st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
-            
-            st.markdown('</div></div>', unsafe_allow_html=True)
+                            check = supabase.table("app_users").select("username").eq("username", r_user).execute()
+                            if check.data:
+                                st.error("Username นี้มีอยู่ในระบบแล้ว")
+                            else:
+                                new_u = {
+                                    "username": r_user.strip(),
+                                    "password_hash": r_p1,
+                                    "fullname": r_name.strip(),
+                                    "email": r_email.strip(),
+                                    "phone": r_phone.strip(),
+                                    "role": "Employee",
+                                    "roles": "ปฏิบัติงาน",
+                                    "is_approved": False
+                                }
+                                supabase.table("app_users").insert(new_u).execute()
+                                clear_all_cache()
+                                st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
 
     with tab_reset:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown(f"""
-                <div class="auth-box-watermark">
-                    <div class="auth-watermark-bg"></div>
-                    <div class="auth-content">
-            """, unsafe_allow_html=True)
-            
-            st.subheader("ตั้งรหัสผ่านใหม่")
-            with st.form("reset_form"):
-                rs_user = st.text_input("Username *")
-                rs_contact = st.text_input("Email หรือ เบอร์โทรที่ลงทะเบียนไว้ *")
-                rs_p1 = st.text_input("รหัสผ่านใหม่ *", type="password")
-                rs_p2 = st.text_input("ยืนยันรหัสผ่านใหม่ *", type="password")
-                
-                if st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
-                    if not (rs_user and rs_contact and rs_p1):
-                        st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
-                    elif rs_p1 != rs_p2:
-                        st.error("รหัสผ่านไม่ตรงกัน")
-                    else:
-                        u_res = supabase.table("app_users").select("*").eq("username", rs_user.strip()).execute()
-                        if not u_res.data:
-                            st.error("ไม่พบบัญชีผู้ใช้นี้")
+            with st.container(border=True):
+                st.markdown("""
+                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
+                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">🔑 ตั้งรหัสผ่านใหม่</h3>
+                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">กู้คืนรหัส</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                with st.form("reset_form"):
+                    rs_user = st.text_input("Username *")
+                    rs_contact = st.text_input("Email หรือ เบอร์โทรที่ลงทะเบียนไว้ *")
+                    rs_p1 = st.text_input("รหัสผ่านใหม่ *", type="password")
+                    rs_p2 = st.text_input("ยืนยันรหัสผ่านใหม่ *", type="password")
+                    
+                    if st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
+                        if not (rs_user and rs_contact and rs_p1):
+                            st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
+                        elif rs_p1 != rs_p2:
+                            st.error("รหัสผ่านไม่ตรงกัน")
                         else:
-                            ud = u_res.data[0]
-                            if rs_contact.strip().lower() in [str(ud.get("email")).strip().lower(), str(ud.get("phone")).strip()]:
-                                supabase.table("app_users").update({"password_hash": rs_p1}).eq("user_id", ud["user_id"]).execute()
-                                clear_all_cache()
-                                st.success("✅ แก้ไขรหัสผ่านสำเร็จแล้ว! สามารถเข้าสู่ระบบด้วยรหัสใหม่ได้ทันที")
+                            u_res = supabase.table("app_users").select("*").eq("username", rs_user.strip()).execute()
+                            if not u_res.data:
+                                st.error("ไม่พบบัญชีผู้ใช้นี้")
                             else:
-                                st.error("Email หรือ เบอร์โทรไม่ตรงกับข้อมูลในระบบ")
-            
-            st.markdown('</div></div>', unsafe_allow_html=True)
+                                ud = u_res.data[0]
+                                if rs_contact.strip().lower() in [str(ud.get("email")).strip().lower(), str(ud.get("phone")).strip()]:
+                                    supabase.table("app_users").update({"password_hash": rs_p1}).eq("user_id", ud["user_id"]).execute()
+                                    clear_all_cache()
+                                    st.success("✅ แก้ไขรหัสผ่านสำเร็จแล้ว! สามารถเข้าสู่ระบบด้วยรหัสใหม่ได้ทันที")
+                                else:
+                                    st.error("Email หรือ เบอร์โทรไม่ตรงกับข้อมูลในระบบ")
 
 # --- Module 1: ระบบสั่งการและมอบหมายงาน (เฉพาะยศ 'ระดับสั่งการ') ---
 
@@ -973,10 +977,16 @@ else:
     is_admin = curr_user.get("role") == "Admin" or curr_username == "admin"
     
     # แสดงโลโก้ใน Sidebar
-    if os.path.exists("logo.jpg"):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_file = None
+    for cand in ["logo.jpg", os.path.join(base_dir, "logo.jpg"), "logo.png"]:
+        if os.path.exists(cand):
+            logo_file = cand
+            break
+    if logo_file:
         sb_c1, sb_c2 = st.sidebar.columns([1, 2.2])
         with sb_c1:
-            st.image("logo.jpg", use_container_width=True)
+            st.image(logo_file, use_container_width=True)
         with sb_c2:
             st.markdown(f"**{curr_fullname}**<br/><small style='color:#64748b;'>@{curr_username}</small>", unsafe_allow_html=True)
     else:
