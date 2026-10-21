@@ -257,29 +257,66 @@ KANBAN_DND_CSS = """
 .quick-move-sel:hover {
   border-color: #0284c7;
 }
-.col-filter-box {
-  padding: 6px 6px 8px 6px;
-  background: #ffffff;
+.card-stack-box {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  margin-bottom: 8px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-}
-.col-task-selector {
-  width: 100%;
   padding: 5px 8px;
-  font-size: 0.79rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #0f172a;
+  margin-bottom: 4px;
+}
+.card-stack-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+.card-stack-title {
+  font-size: 0.73rem;
+  color: #0369a1;
+  font-weight: 700;
+}
+.card-stack-count-badge {
+  font-size: 0.68rem;
+  background: #0284c7;
+  color: #ffffff;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.card-stack-dropdown {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 0.78rem;
   font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #7dd3fc;
+  border-radius: 6px;
   outline: none;
   cursor: pointer;
 }
-.col-task-selector:focus {
+.card-stack-dropdown:focus {
   border-color: #0284c7;
-  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+.kanban-card.card-stacked {
+  box-shadow: 
+    0 1px 3px rgba(0,0,0,0.05),
+    0 4px 0 0 #f8fafc,
+    0 5px 0 1px #cbd5e1,
+    0 9px 0 0 #f1f5f9,
+    0 10px 0 1px #94a3b8;
+  margin-bottom: 10px;
+}
+.kanban-card.card-stacked:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 6px 14px rgba(2, 132, 199, 0.14),
+    0 4px 0 0 #f8fafc,
+    0 5px 0 1px #38bdf8,
+    0 9px 0 0 #f1f5f9,
+    0 10px 0 1px #0284c7;
+  border-color: #38bdf8;
 }
 .col-cards-container {
   display: flex;
@@ -334,23 +371,8 @@ export default function (component) {
         </div>
       `;
     } else {
-      if (colTasks.length > 1) {
-        html += `
-          <div class="col-filter-box">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span style="font-size:0.75rem; color:#475569; font-weight:700;">📂 เลือกงานที่จะดู:</span>
-              <span style="font-size:0.72rem; color:#0284c7; font-weight:700;">${colTasks.length} รายการ</span>
-            </div>
-            <select class="col-task-selector" data-col-id="${col.id}">
-              <option value="all">📋 แสดงทั้งหมด (${colTasks.length} งาน)</option>
-              ${colTasks.map(t => `<option value="${t.id}">📌 ${t.title.length > 25 ? t.title.substring(0, 25) + '...' : t.title}</option>`).join('')}
-            </select>
-          </div>
-        `;
-      }
-      
       html += `<div class="col-cards-container" data-col-id="${col.id}">`;
-      colTasks.forEach(task => {
+      colTasks.forEach((task, index) => {
         let alertBadge = "";
         if (task.isOverdue) {
           alertBadge = `<span style="background:#fee2e2; color:#b91c1c; border-radius:4px; padding:1px 5px; font-size:0.73rem; font-weight:700; border:1px solid #fecaca; white-space:nowrap;">🚨 เกินกำหนด</span>`;
@@ -374,8 +396,32 @@ export default function (component) {
           fileBadge = `<span style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid #bae6fd;">📸 มีรูป</span>`;
         }
 
+        const isStacked = colTasks.length > 1;
+        const stackedClass = isStacked ? " card-stacked" : "";
+        const initialDisplay = (isStacked && index > 0) ? "display:none;" : "";
+
+        let stackHeaderHtml = "";
+        if (isStacked) {
+          stackHeaderHtml = `
+            <div class="card-stack-box">
+              <div class="card-stack-label-row">
+                <span class="card-stack-title">📚 ซ้อน ${colTasks.length} งานในช่องนี้</span>
+                <span class="card-stack-count-badge">${index + 1} จาก ${colTasks.length}</span>
+              </div>
+              <select class="card-stack-dropdown" data-col-id="${col.id}" title="สลับดูงานอื่นในช่องนี้">
+                ${colTasks.map((t, i) => `
+                  <option value="${t.id}" ${t.id === task.id ? 'selected' : ''}>
+                    ${i + 1}. ${t.title.length > 25 ? t.title.substring(0, 25) + '...' : t.title}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          `;
+        }
+
         html += `
-          <div class="kanban-card" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}">
+          <div class="kanban-card${stackedClass}" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}" style="${initialDisplay}">
+            ${stackHeaderHtml}
             <div class="card-header-row">
               <div class="card-title">${task.title}</div>
               <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
@@ -518,6 +564,8 @@ export default function (component) {
 
   // Quick move select
   board.querySelectorAll(".quick-move-sel").forEach(sel => {
+    sel.addEventListener("mousedown", (e) => e.stopPropagation());
+    sel.addEventListener("click", (e) => e.stopPropagation());
     sel.addEventListener("change", (e) => {
       e.stopPropagation();
       const targetStatus = sel.value;
@@ -534,17 +582,22 @@ export default function (component) {
     });
   });
 
-  // Column task filter selector (เมื่อมีมากกว่า 1 งานในช่อง)
-  board.querySelectorAll(".col-task-selector").forEach(sel => {
+  // Card stack dropdown selector (สลับงานที่ซ้อนกันในก้อนเดียว)
+  board.querySelectorAll(".card-stack-dropdown").forEach(sel => {
+    sel.addEventListener("mousedown", (e) => e.stopPropagation());
+    sel.addEventListener("click", (e) => e.stopPropagation());
     sel.addEventListener("change", (e) => {
-      const selectedId = sel.value;
+      e.stopPropagation();
+      const targetId = sel.value;
       const colId = sel.dataset.colId;
       const container = board.querySelector(`.col-cards-container[data-col-id="${colId}"]`);
       if (!container) return;
       const cardsInCol = container.querySelectorAll(".kanban-card");
       cardsInCol.forEach(card => {
-        if (selectedId === "all" || card.dataset.taskId === selectedId) {
+        if (card.dataset.taskId === targetId) {
           card.style.display = "flex";
+          const innerSel = card.querySelector(".card-stack-dropdown");
+          if (innerSel) innerSel.value = targetId;
         } else {
           card.style.display = "none";
         }
