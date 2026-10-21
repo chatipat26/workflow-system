@@ -367,7 +367,12 @@ export default function (component) {
           priorityTag = `<span style="background:#fef3c7; color:#b45309; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap;">⚡ ด่วน</span>`;
         }
 
-        let imageBadge = task.hasImage ? `<span style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid #bae6fd;">📸 มีรูป</span>` : "";
+        let fileBadge = "";
+        if (task.hasPdf) {
+          fileBadge = `<span style="background:#fef2f2; color:#dc2626; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid #fecaca;">📄 มี PDF</span>`;
+        } else if (task.hasImage) {
+          fileBadge = `<span style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid #bae6fd;">📸 มีรูป</span>`;
+        }
 
         html += `
           <div class="kanban-card" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}">
@@ -375,7 +380,7 @@ export default function (component) {
               <div class="card-title">${task.title}</div>
               <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
                 ${priorityTag}
-                ${imageBadge}
+                ${fileBadge}
                 <span class="card-type-tag">${task.taskType || 'Project'}</span>
               </div>
             </div>
@@ -764,7 +769,7 @@ def format_datetime_thai(dt_val):
     except Exception:
         return str(dt_val)[:16]
 
-# --- Helper สำหรับจัดการรูปภาพ (Google Drive Link & อัปโหลด Base64) ---
+# --- Helper สำหรับจัดการไฟล์แนบ (รูปภาพ & เอกสาร PDF & Google Drive) ---
 
 def convert_gdrive_url(url):
     """แปลง Google Drive Share Link เป็น direct viewable URL สำหรับแสดงผลในแท็ก img หรือ st.image"""
@@ -779,6 +784,29 @@ def convert_gdrive_url(url):
         return f"https://lh3.googleusercontent.com/d/{m.group(1)}"
     return url
 
+def get_gdrive_file_id(url):
+    """ดึง File ID จาก Google Drive URL"""
+    if not url or not isinstance(url, str):
+        return None
+    m = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', url)
+    if m:
+        return m.group(1)
+    m = re.search(r'drive\.google\.com/(?:open|uc)\?(?:[^&]*&)*id=([a-zA-Z0-9_-]+)', url)
+    if m:
+        return m.group(1)
+    return None
+
+def is_pdf_file_or_data(val):
+    """ตรวจสอบว่าค่าที่ส่งมาเป็นไฟล์หรือเอกสาร PDF หรือไม่"""
+    if not val or not isinstance(val, str):
+        return False
+    v = val.strip().lower()
+    if v.startswith("data:application/pdf"):
+        return True
+    if v.endswith(".pdf") or ".pdf?" in v or ".pdf#" in v:
+        return True
+    return False
+
 def is_image_url_or_data(url):
     """ตรวจสอบว่าค่าที่ส่งมาเป็นรูปภาพ (Data URI, Google Drive, หรือ URL รูปภาพทั่วไป) หรือไม่"""
     if not url or not isinstance(url, str):
@@ -786,18 +814,36 @@ def is_image_url_or_data(url):
     u = url.strip().lower()
     if u.startswith("data:image/"):
         return True
+    if is_pdf_file_or_data(u):
+        return False
     if "drive.google.com" in u or "googleusercontent.com" in u:
         return True
     if any(u.endswith(ext) or ext in u for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]):
         return True
     return False
 
-def process_uploaded_image_file(uploaded_file, max_size=(1280, 1280), quality=80):
-    """บีบอัดและแปลงไฟล์รูปภาพที่อัปโหลดเป็น Base64 Data URI เพื่อจัดเก็บในฐานข้อมูล Supabase ได้อย่างปลอดภัยและรวดเร็ว"""
+def process_uploaded_file(uploaded_file, max_size=(1280, 1280), quality=80, max_file_mb=8):
+    """บีบอัดและแปลงไฟล์ที่อัปโหลด (รองรับทั้งไฟล์รูปภาพและเอกสาร PDF) เป็น Base64 Data URI จัดเก็บใน Supabase"""
     if not uploaded_file:
         return None
     try:
-        img = Image.open(uploaded_file)
+        fname = getattr(uploaded_file, "name", "").lower()
+        file_bytes = uploaded_file.getvalue()
+        
+        # ตรวจสอบขนาดไฟล์
+        file_size_mb = len(file_bytes) / (1024 * 1024)
+        if file_size_mb > max_file_mb:
+            st.error(f"⚠️ ขนาดไฟล์ ({file_size_mb:.1f} MB) เกินขีดจำกัด {max_file_mb} MB กรุณาเลือกไฟล์ที่เล็กลง หรือใช้ลิงก์ Google Drive")
+            return None
+
+        # 1. กรณีเป็นไฟล์เอกสาร PDF
+        if fname.endswith(".pdf") or getattr(uploaded_file, "type", "") == "application/pdf":
+            b64_pdf = base64.b64encode(file_bytes).decode("utf-8")
+            clean_name = getattr(uploaded_file, "name", "document.pdf").replace(",", "_").replace(";", "_")
+            return f"data:application/pdf;name={clean_name};base64,{b64_pdf}"
+            
+        # 2. กรณีเป็นไฟล์รูปภาพ
+        img = Image.open(io.BytesIO(file_bytes))
         try:
             img = ImageOps.exif_transpose(img)
         except Exception:
@@ -810,23 +856,89 @@ def process_uploaded_image_file(uploaded_file, max_size=(1280, 1280), quality=80
         b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
         return f"data:image/jpeg;base64,{b64_str}"
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการประมวลผลรูปภาพ: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการประมวลผลไฟล์: {e}")
         return None
 
-def render_image_preview(img_val, caption="รูปภาพประกอบ"):
-    """แสดงผลรูปภาพในแอปพลิเคชันอย่างสวยงาม รองรับทั้ง Base64, Google Drive, และเว็บลิงก์ทั่วไป"""
-    if not img_val:
+# กำหนด alias เพื่อให้เรียกใช้ได้ทั้งสองชื่อ
+process_uploaded_image_file = process_uploaded_file
+
+def render_attachment_preview(file_val, caption="ไฟล์แนบ / เอกสาร", height=450):
+    """แสดงผลไฟล์แนบในแอปพลิเคชัน รองรับทั้งรูปภาพ, เอกสาร PDF (มี Viewer ให้อ่านในแอปได้ทันที), และลิงก์ Google Drive"""
+    if not file_val:
         return
-    img_str = str(img_val).strip()
-    direct_url = convert_gdrive_url(img_str)
+    f_str = str(file_val).strip()
+
+    # 1. กรณีเป็นเอกสาร PDF
+    if is_pdf_file_or_data(f_str):
+        with st.container(border=True):
+            st.markdown(f"**📄 {caption} (เอกสาร PDF)**")
+            if f_str.startswith("data:application/pdf"):
+                try:
+                    fname = "document.pdf"
+                    if "name=" in f_str:
+                        fname = f_str.split("name=")[1].split(";base64,")[0]
+                    b64_data = f_str.split(";base64,")[1]
+                    raw_bytes = base64.b64decode(b64_data)
+                    
+                    c_dl, c_hint = st.columns([1.5, 2.5])
+                    with c_dl:
+                        st.download_button(
+                            label=f"📥 ดาวน์โหลดไฟล์ PDF ({fname})",
+                            data=raw_bytes,
+                            file_name=fname,
+                            mime="application/pdf",
+                            key=f"dl_pdf_{abs(hash(f_str[:60]))}",
+                            type="primary",
+                            use_container_width=True
+                        )
+                    with c_hint:
+                        st.caption("🔍 สามารถเลื่อนอ่านเอกสาร PDF โดยตรงในกล่องด้านล่าง หรือกดดาวน์โหลดเพื่อเปิดไฟล์")
+
+                    pdf_html = f'<iframe src="data:application/pdf;base64,{b64_data}#toolbar=1" width="100%" height="{height}px" style="border:1px solid #cbd5e1; border-radius:8px;"></iframe>'
+                    st.components.v1.html(pdf_html, height=height + 15)
+                except Exception as e:
+                    st.warning(f"ไม่สามารถแสดงตัวอย่าง PDF ในหน้าเว็บได้: {e}")
+            else:
+                g_id = get_gdrive_file_id(f_str)
+                if g_id:
+                    g_preview = f"https://drive.google.com/file/d/{g_id}/preview"
+                    st.markdown(f"🔗 [เปิดเอกสาร PDF บน Google Drive (แท็บใหม่)]({f_str})")
+                    pdf_html = f'<iframe src="{g_preview}" width="100%" height="{height}px" style="border:1px solid #cbd5e1; border-radius:8px;" allow="autoplay"></iframe>'
+                    st.components.v1.html(pdf_html, height=height + 15)
+                else:
+                    st.markdown(f"🔗 [คลิกเพื่อเปิด / ดาวน์โหลดเอกสาร PDF]({f_str})")
+                    pdf_html = f'<iframe src="{f_str}" width="100%" height="{height}px" style="border:1px solid #cbd5e1; border-radius:8px;"></iframe>'
+                    st.components.v1.html(pdf_html, height=height + 15)
+        return
+
+    # 2. กรณีเป็นรูปภาพ
+    if is_image_url_or_data(f_str):
+        direct_url = convert_gdrive_url(f_str)
+        with st.container(border=True):
+            st.caption(f"📸 **{caption}**")
+            try:
+                st.image(direct_url, use_container_width=True)
+            except Exception:
+                st.markdown(f"📎 [{caption} (คลิกดูภาพ)]({f_str})")
+            if not f_str.startswith("data:image/"):
+                st.markdown(f"🔗 [คลิกเปิดดูไฟล์ต้นฉบับ]({f_str})")
+        return
+
+    # 3. กรณีเป็นลิงก์ทั่วไป หรือโฟลเดอร์ Google Drive
+    g_id = get_gdrive_file_id(f_str)
     with st.container(border=True):
-        st.caption(f"📸 **{caption}**")
-        try:
-            st.image(direct_url, use_container_width=True)
-        except Exception:
-            st.markdown(f"📎 [{caption} (คลิกดูภาพ)]({img_str})")
-        if not img_str.startswith("data:image/"):
-            st.markdown(f"🔗 [คลิกเปิดดูไฟล์ต้นฉบับ]({img_str})")
+        st.markdown(f"**📎 {caption}**")
+        st.markdown(f"🔗 [คลิกเปิดลิงก์ไฟล์แนบ]({f_str})")
+        if g_id:
+            try:
+                g_preview = f"https://drive.google.com/file/d/{g_id}/preview"
+                st.components.v1.html(f'<iframe src="{g_preview}" width="100%" height="{height}px" style="border:1px solid #cbd5e1; border-radius:8px;"></iframe>', height=height + 15)
+            except Exception:
+                pass
+
+def render_image_preview(img_val, caption="รูปภาพประกอบ"):
+    """เชื่อมต่อกับ render_attachment_preview เพื่อให้รองรับทั้งรูปภาพและเอกสาร PDF อัตโนมัติ"""
+    render_attachment_preview(img_val, caption=caption)
 
 def user_can_edit_task_progress(curr_user, task):
     """ตรวจสอบสิทธิ์: เพิ่มเติมแก้ไขบันทึกได้เฉพาะผู้รับผิดชอบงาน และ User ระดับสั่งการ / Admin เท่านั้น"""
@@ -869,10 +981,7 @@ def show_task_progress_dialog(task, curr_user):
         if desc and desc != "-":
             st.caption(f"**ขอบเขตงาน (Scope):** {desc}")
         if attachment:
-            if is_image_url_or_data(attachment):
-                render_image_preview(attachment, caption="รูปภาพแนบเปิดงาน / เอกสารประกอบ")
-            else:
-                st.markdown(f"📎 **ไฟล์แนบ / ลิงก์:** [{attachment}]({attachment})")
+            render_attachment_preview(attachment, caption="ไฟล์แนบเปิดงาน / เอกสารประกอบ")
 
     st.markdown("---")
 
@@ -895,7 +1004,7 @@ def show_task_progress_dialog(task, curr_user):
 
             p_img_c1, p_img_c2 = st.columns(2)
             with p_img_c1:
-                p_file = st.file_uploader("📸 แนบรูปความคืบหน้า (คลิกอัปโหลด):", type=["png", "jpg", "jpeg", "webp"], key=f"p_file_{tid}")
+                p_file = st.file_uploader("📎 แนบไฟล์ความคืบหน้า (รูปภาพหรือเอกสาร PDF):", type=["png", "jpg", "jpeg", "webp", "pdf"], key=f"p_file_{tid}")
             with p_img_c2:
                 p_link = st.text_input("🔗 หรือลิงก์ Google Drive / รูปภาพ:", placeholder="https://drive.google.com/...", key=f"p_link_{tid}")
 
@@ -1241,7 +1350,7 @@ def show_submit_work_dialog(task, curr_user):
         
         c_sub_f1, c_sub_f2 = st.columns(2)
         with c_sub_f1:
-            sub_file = st.file_uploader("📸 แนบรูปภาพผลงานสำเร็จ (คลิกอัปโหลด):", type=["png", "jpg", "jpeg", "webp"], key=f"s_img_{tid}")
+            sub_file = st.file_uploader("📎 แนบไฟล์ผลงานสำเร็จ (รูปภาพหรือเอกสาร PDF):", type=["png", "jpg", "jpeg", "webp", "pdf"], key=f"s_img_{tid}")
         with c_sub_f2:
             sub_link = st.text_input("🔗 หรือลิงก์ Google Drive / ผลงาน:", placeholder="https://drive.google.com/...", key=f"s_lnk_{tid}")
 
@@ -1579,7 +1688,7 @@ def show_module1_commander_page():
                 attachment_link = st.text_input("ลิงก์ไฟล์แนบ (Google Drive / Cloud Link)", placeholder="https://drive.google.com/...")
 
             description = st.text_area("รายละเอียดขอบเขตงาน (Scope of Work) *")
-            uploaded_task_img = st.file_uploader("📸 แนบรูปภาพเปิดงาน (คลิกเลือกไฟล์รูปภาพจากอุปกรณ์):", type=["png", "jpg", "jpeg", "webp"], key="create_task_img")
+            uploaded_task_img = st.file_uploader("📎 แนบไฟล์เปิดงาน (รูปภาพหรือเอกสาร PDF):", type=["png", "jpg", "jpeg", "webp", "pdf"], key="create_task_img")
             submitted = st.form_submit_button("บันทึกและส่งงานไปยังกระดาน", use_container_width=True, type="primary")
 
             if submitted:
@@ -1833,6 +1942,11 @@ def render_task_board(curr_user, curr_username, is_commander):
             
             can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
             
+            att_s = str(row.get("attachment_url") or "")
+            sub_s = str(row.get("submission_note") or "")
+            has_pdf = is_pdf_file_or_data(att_s) or ("[ATTACHED_IMAGE:" in sub_s and is_pdf_file_or_data(sub_s))
+            has_img = (bool(att_s) or "[ATTACHED_IMAGE:" in sub_s) and not has_pdf
+
             tasks_data.append({
                 "id": str(row.get("task_id")),
                 "title": str(row.get("title") or "ไม่มีชื่อ"),
@@ -1848,7 +1962,8 @@ def render_task_board(curr_user, curr_username, is_commander):
                 "handoverReason": str(row.get("handover_reason") or ""),
                 "description": str(row.get("description") or ""),
                 "canDelete": bool(can_del),
-                "hasImage": bool(row.get("attachment_url")) or ("[ATTACHED_IMAGE:" in str(row.get("submission_note", ""))),
+                "hasPdf": bool(has_pdf),
+                "hasImage": bool(has_img),
             })
             
         st.caption("💡 **วิธีใช้งาน:** คลิกลากการ์ดงาน (Drag & Drop) ข้ามช่องเพื่อเปลี่ยนสถานะได้ทันที หรือกดปุ่ม 📝 คืบหน้า / 🤝 ส่งต่องาน บนการ์ด")
