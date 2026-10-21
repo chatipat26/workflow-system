@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import json
 from client import supabase
 
@@ -9,111 +9,161 @@ from client import supabase
 st.set_page_config(
     page_title="Team Workflow & KPI Hub",
     page_icon="📋",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern design and Sarabun font styling
+# Custom CSS for Auspicious Red Theme & Image 1/2 Aesthetics
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
     
     * {
         font-family: 'Sarabun', sans-serif;
     }
     
-    .kanban-card {
-        background-color: var(--background-color, #ffffff);
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 16px;
+    /* Background & Main App */
+    .stApp {
+        background-color: #faf8f8;
+    }
+
+    /* Auspicious Red Metric Box (Like Image 2) */
+    .stat-box {
+        background: #ffffff;
+        border: 1px solid #fee2e2;
+        border-radius: 16px;
+        padding: 16px 20px;
+        box-shadow: 0 2px 8px rgba(185, 28, 28, 0.03);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
         margin-bottom: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        border-left: 5px solid #3b82f6;
     }
-    
-    /* แจ้งเตือนสีแดง สำหรับงานเลยกำหนด */
-    .kanban-card-overdue {
-        border-left: 5px solid #ef4444 !important;
-        background-color: #fef2f2 !important;
+    .stat-box:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 14px rgba(185, 28, 28, 0.08);
+        border-color: #fca5a5;
     }
-    
-    /* แจ้งเตือนสีเหลือง สำหรับงานใกล้ถึงกำหนดล่วงหน้า 3 วัน */
-    .kanban-card-warning {
-        border-left: 5px solid #f59e0b !important;
-        background-color: #fffbeb !important;
+    .stat-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
     }
-    
-    /* แจ้งเตือนสีส้ม สำหรับงานที่กำลังรออนุมัติส่งต่อ */
-    .kanban-card-handover {
-        border-left: 5px solid #ea580c !important;
-        background-color: #fff7ed !important;
-    }
-
-    .kanban-card-title {
-        font-size: 1.05rem;
+    .stat-number {
+        font-size: 1.85rem;
         font-weight: 700;
-        margin-bottom: 8px;
-        margin-top: 6px;
+        color: #991b1b;
+        margin: 4px 0;
+        line-height: 1.2;
+    }
+    .stat-label {
+        font-size: 0.85rem;
+        color: #64748b;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+    }
+    .stat-sub {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+
+    /* The Booking / Filter Bar (Like Image 1) */
+    .booking-filter-bar {
+        background: #ffffff;
+        border: 1px solid #fecaca;
+        border-radius: 20px;
+        padding: 18px 24px;
+        box-shadow: 0 6px 20px rgba(185, 28, 28, 0.05);
+        margin-bottom: 24px;
+    }
+
+    /* Showcase Card (Like Image 1 "Our Elite Fleet") */
+    .showcase-card {
+        background: #ffffff;
+        border: 1px solid #fce7e7;
+        border-radius: 18px;
+        padding: 18px;
+        margin-bottom: 16px;
+        box-shadow: 0 3px 10px rgba(185, 28, 28, 0.04);
+        border-top: 4px solid #b91c1c;
+        transition: all 0.25s ease;
+    }
+    .showcase-card:hover {
+        box-shadow: 0 8px 22px rgba(185, 28, 28, 0.1);
+        border-color: #fca5a5;
+        transform: translateY(-2px);
+    }
+    .showcase-card-overdue {
+        border-top: 4px solid #ef4444 !important;
+        background-color: #fffbfb !important;
+        border-color: #fecaca !important;
+    }
+    .showcase-card-warning {
+        border-top: 4px solid #f59e0b !important;
+        background-color: #fffefb !important;
+    }
+    .showcase-card-done {
+        border-top: 4px solid #10b981 !important;
+        opacity: 0.85;
+    }
+
+    .showcase-title {
+        font-size: 1.1rem;
+        font-weight: 700;
         color: #1e293b;
+        margin-top: 8px;
+        margin-bottom: 6px;
     }
 
-    .badge-project {
-        background-color: #e0e7ff;
-        color: #3730a3;
-        padding: 3px 8px;
-        border-radius: 8px;
+    /* Badges & Pills */
+    .badge-pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 12px;
         font-size: 0.75rem;
         font-weight: 600;
+        margin-right: 4px;
     }
-    
-    .badge-routine {
-        background-color: #fef3c7;
-        color: #92400e;
-        padding: 3px 8px;
-        border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .badge-urgent {
+    .badge-red {
         background-color: #fee2e2;
         color: #991b1b;
-        padding: 2px 7px;
-        border-radius: 6px;
-        font-size: 0.7rem;
-        font-weight: 700;
+    }
+    .badge-gold {
+        background-color: #fef3c7;
+        color: #92400e;
+    }
+    .badge-green {
+        background-color: #dcfce7;
+        color: #166534;
+    }
+    .badge-blue {
+        background-color: #e0e7ff;
+        color: #3730a3;
+    }
+    .badge-purple {
+        background-color: #f3e8ff;
+        color: #6b21a8;
     }
 
-    .badge-role-commander {
-        background-color: #ede9fe;
-        color: #5b21b6;
-        padding: 2px 8px;
-        border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .badge-role-operator {
-        background-color: #ccfbf1;
-        color: #115e59;
-        padding: 2px 8px;
-        border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .badge-role-admin {
-        background-color: #ffe4e6;
-        color: #9f1239;
-        padding: 2px 8px;
-        border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-
-    div[data-baseweb="button"] > button {
-        border-radius: 8px !important;
+    /* Buttons Auspicious Styling */
+    div[data-baseweb="button"] > button[kind="primary"] {
+        background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%) !important;
+        border: none !important;
+        color: #ffffff !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 12px rgba(185, 28, 28, 0.22) !important;
         font-weight: 600 !important;
+    }
+    div[data-baseweb="button"] > button {
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+    }
+
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #fee2e2;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -155,7 +205,6 @@ def fetch_all_users():
         res = supabase.table("app_users").select("*").execute()
         return res.data or []
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูลผู้ใช้: {e}")
         return []
 
 def fetch_operators():
@@ -163,7 +212,7 @@ def fetch_operators():
     users = fetch_all_users()
     operators = []
     for u in users:
-        is_approved = u.get("is_approved", True)  # ถ้าคอลัมน์ยังไม่มี ให้ถือว่าผ่าน
+        is_approved = u.get("is_approved", True)
         roles = parse_roles(u.get("roles"))
         if is_approved and ("ปฏิบัติงาน" in roles or u.get("role") == "Admin"):
             display_name = u.get("fullname") or u.get("username")
@@ -179,7 +228,6 @@ def fetch_tasks():
         res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
         return pd.DataFrame(res.data) if res.data else pd.DataFrame()
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูลงาน: {e}")
         return pd.DataFrame()
 
 def log_task_action(task_id, action, performed_by, details=""):
@@ -192,7 +240,7 @@ def log_task_action(task_id, action, performed_by, details=""):
             "details": details
         }).execute()
     except Exception:
-        pass  # หากตารางยังไม่ถูกสร้างให้ข้ามไปได้โดยไม่ error
+        pass
 
 def fetch_task_logs(task_id):
     """ดึงประวัติการทำงานของงานนั้นๆ"""
@@ -216,8 +264,12 @@ def fetch_kpi_adjustments(username=None):
 # --- Module: Authentication & Registration & Password Reset ---
 
 def show_auth_page():
-    st.title("🛡️ ระบบจัดการงาน & ประเมินผล KPI (Workflow SVV)")
-    st.markdown("กรุณาเข้าสู่ระบบ หรือสมัครสมาชิกรอการอนุมัติสิทธิ์เข้าใช้งาน")
+    st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem; margin-top: 1rem;">
+            <h1 style="color: #991b1b; font-weight: 700; margin-bottom: 0.25rem;">✨ ระบบจัดการงาน & ประเมินผล KPI (Workflow Hub)</h1>
+            <p style="color: #64748b; font-size: 1.05rem;">ระบบติดตามสถานะงาน Kanban บันทึกผลงาน และคำนวณ KPI รายบุคคล</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     tab_login, tab_register, tab_reset = st.tabs([
         "🔒 เข้าสู่ระบบ (Login)", 
@@ -228,7 +280,7 @@ def show_auth_page():
     with tab_login:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown('<div class="kanban-card">', unsafe_allow_html=True)
+            st.markdown('<div class="stat-box" style="padding: 24px;">', unsafe_allow_html=True)
             st.subheader("เข้าสู่ระบบ")
             username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="login_username")
             password = st.text_input("รหัสผ่าน (Password)", type="password", key="login_password")
@@ -241,7 +293,6 @@ def show_auth_page():
                         res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
                         if res.data and len(res.data) > 0:
                             user = res.data[0]
-                            # ตรวจสอบว่าได้รับการอนุมัติหรือไม่ (Admin ผ่านเสมอ)
                             is_approved = user.get("is_approved")
                             if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
                                 st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอผู้ดูแลระบบ (Admin) อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
@@ -259,7 +310,7 @@ def show_auth_page():
     with tab_register:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown('<div class="kanban-card">', unsafe_allow_html=True)
+            st.markdown('<div class="stat-box" style="padding: 24px;">', unsafe_allow_html=True)
             st.subheader("สมัครสมาชิกพนักงานใหม่")
             st.caption("เมื่อสมัครเสร็จสิ้น บัญชีจะถูกส่งให้ Admin ตรวจสอบและให้ยศก่อนเข้าใช้")
             
@@ -271,7 +322,7 @@ def show_auth_page():
                 reg_pass1 = st.text_input("รหัสผ่าน (Password) *", type="password")
                 reg_pass2 = st.text_input("ยืนยันรหัสผ่าน (Confirm Password) *", type="password")
                 
-                reg_submitted = st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True)
+                reg_submitted = st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True, type="primary")
                 
                 if reg_submitted:
                     if not (reg_username and reg_fullname and reg_email and reg_phone and reg_pass1):
@@ -279,7 +330,6 @@ def show_auth_page():
                     elif reg_pass1 != reg_pass2:
                         st.error("รหัสผ่านทั้งสองช่องไม่ตรงกัน")
                     else:
-                        # ตรวจสอบว่ามี username ซ้ำหรือไม่
                         check_res = supabase.table("app_users").select("username").eq("username", reg_username).execute()
                         if check_res.data and len(check_res.data) > 0:
                             st.error("ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น")
@@ -304,7 +354,7 @@ def show_auth_page():
     with tab_reset:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown('<div class="kanban-card">', unsafe_allow_html=True)
+            st.markdown('<div class="stat-box" style="padding: 24px;">', unsafe_allow_html=True)
             st.subheader("แก้ไข / ตั้งรหัสผ่านใหม่")
             st.caption("กรอก Username และ Email หรือ เบอร์โทรศัพท์ ที่ลงทะเบียนไว้เพื่อยืนยันตัวตน")
             
@@ -313,7 +363,7 @@ def show_auth_page():
                 rst_contact = st.text_input("Email หรือ เบอร์โทร ที่ลงทะเบียนไว้ *")
                 rst_new_pass = st.text_input("รหัสผ่านใหม่ *", type="password")
                 rst_confirm_pass = st.text_input("ยืนยันรหัสผ่านใหม่ *", type="password")
-                rst_submitted = st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True)
+                rst_submitted = st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary")
                 
                 if rst_submitted:
                     if not (rst_username and rst_contact and rst_new_pass):
@@ -321,7 +371,6 @@ def show_auth_page():
                     elif rst_new_pass != rst_confirm_pass:
                         st.error("รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน")
                     else:
-                        # ค้นหาผู้ใช้จาก username
                         u_res = supabase.table("app_users").select("*").eq("username", rst_username.strip()).execute()
                         if not u_res.data:
                             st.error("ไม่พบบัญชีผู้ใช้นี้ในระบบ")
@@ -331,7 +380,6 @@ def show_auth_page():
                             db_phone = str(u_data.get("phone") or "").strip()
                             input_contact = rst_contact.strip().lower()
                             
-                            # ตรวจสอบ Email หรือ Phone
                             if input_contact == db_email or input_contact == db_phone:
                                 supabase.table("app_users").update({
                                     "password_hash": rst_new_pass
@@ -341,19 +389,22 @@ def show_auth_page():
                                 st.error("ข้อมูล Email หรือ เบอร์โทร ไม่ตรงกับในระบบ")
             st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Module 1: ระบบสั่งการและมอบหมายงาน (เฉพาะยศ 'ระดับสั่งการ') ---
+# --- Module 1: ระบบสั่งการและมอบหมายงาน (Commander Hub) ---
 
 def show_module1_commander_page():
     curr_user = st.session_state.user
     
-    # ตรวจสอบสิทธิ์ยศระดับสั่งการ
     if not user_has_role(curr_user, "ระดับสั่งการ"):
         st.error("⛔ จำกัดสิทธิ์: โมดูลนี้อนุญาตให้เข้าใช้งานได้เฉพาะผู้มียศ **'ระดับสั่งการ'** เท่านั้น")
         st.info(f"ยศปัจจุบันของคุณ: {', '.join(parse_roles(curr_user.get('roles')))}")
         return
 
-    st.header("🎯 โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander Hub)")
-    st.caption("ระบบสำหรับผู้มียศระดับสั่งการ: มอบหมายงาน, อนุมัติการส่งต่อ, ตรวจรับประเมินผล KPI และปรับคะแนนพนักงาน")
+    st.markdown("""
+        <div style="margin-bottom: 1.5rem;">
+            <h2 style="color: #991b1b; font-weight: 700; margin-bottom: 0.2rem;">🎯 โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander Hub)</h2>
+            <p style="color: #64748b;">สำหรับผู้มียศระดับสั่งการ: มอบหมายงาน, อนุมัติการส่งต่อ, ตรวจรับประเมินผล KPI และปรับคะแนนพนักงาน</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     sub_m1, sub_m2, sub_m3, sub_m4 = st.tabs([
         "📝 มอบหมายงานใหม่", 
@@ -362,7 +413,6 @@ def show_module1_commander_page():
         "⚖️ ฟอร์มเพิ่ม/ลดคะแนน KPI"
     ])
 
-    # 1. มอบหมายงานใหม่
     with sub_m1:
         st.subheader("สร้างและมอบหมายงานใหม่")
         operators = fetch_operators()
@@ -371,13 +421,11 @@ def show_module1_commander_page():
         with st.form("create_task_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
-                title = st.text_input("ชื่องาน / หัวข้อโปรเจกต์ *", placeholder="เช่น ตรวจสอบสต็อกสินค้า, ทำสรุปรายรับ-รายจ่าย")
+                title = st.text_input("ชื่องาน / หัวข้อโปรเจกต์ *", placeholder="เช่น ตรวจสอบสต็อกสินค้า, สรุปยอดรายรับ")
                 task_type = st.selectbox("ประเภทงาน", ["Project", "Routine (งานประจำ)"])
                 priority = st.selectbox("ระดับความเร่งด่วน", ["Normal", "High", "Urgent"])
             with c2:
                 due_date = st.date_input("กำหนดวันส่งงาน (Due Date) *", value=datetime.today() + timedelta(days=7))
-                
-                # Dropdown เลือกผู้ปฏิบัติงาน (มากกว่า 1 คนได้)
                 selected_ops = st.multiselect(
                     "ระบุตัวผู้ปฏิบัติงาน (เลือกได้มากกว่า 1 คน) *",
                     options=list(op_dict.keys()),
@@ -421,21 +469,15 @@ def show_module1_commander_page():
                                 performed_by=curr_user.get("username"),
                                 details=f"ผู้สั่งการ @{curr_user.get('username')} มอบหมายงานให้: {assignees_str}"
                             )
-                        st.success(f"✅ บันทึกงานเรียบร้อยแล้ว! งานถูกส่งไปแสดงบนกระดานงานโมดูลที่ 2 (สถานะ To Do)")
+                        st.success("✅ บันทึกงานเรียบร้อยแล้ว! งานถูกส่งไปแสดงบนกระดานงานโมดูลที่ 2")
                     except Exception as e:
                         st.error(f"ไม่สามารถบันทึกงานได้: {e}")
 
-    # 2. รายการรออนุมัติส่งต่องาน
     with sub_m2:
         st.subheader("อนุมัติคำขอส่งต่องานระหว่างพนักงาน")
-        st.caption("เมื่อพนักงานในโมดูลที่ 2 ขอส่งงานต่อให้เพื่อนร่วมงาน ผู้สั่งการจะต้องเป็นผู้อนุมัติก่อนจึงจะมีผล")
-        
         tasks_df = fetch_tasks()
         if not tasks_df.empty and "handover_status" in tasks_df.columns:
-            # กรองเฉพาะงานที่ขอส่งต่อและรออนุมัติ
             pending_handovers = tasks_df[tasks_df["handover_status"] == "Pending"]
-            
-            # ถ้าไม่ใช่ Admin ให้เห็นเฉพาะงานที่ตัวเองสั่ง
             if curr_user.get("role") != "Admin" and "creator_username" in pending_handovers.columns:
                 pending_handovers = pending_handovers[pending_handovers["creator_username"] == curr_user.get("username")]
 
@@ -445,13 +487,13 @@ def show_module1_commander_page():
                 for _, row in pending_handovers.iterrows():
                     with st.container():
                         st.markdown(f"""
-                        <div class="kanban-card kanban-card-handover">
-                            <span class="badge-project">งาน: {row['title']}</span>
-                            <div class="kanban-card-title">คำขอส่งต่องาน</div>
+                        <div class="stat-box" style="border-left: 5px solid #ea580c;">
+                            <span class="badge-pill badge-blue">งาน: {row['title']}</span>
+                            <h4 style="margin: 8px 0; color: #1e293b;">คำขอส่งต่องาน</h4>
                             <p><strong>ผู้รับผิดชอบเดิม:</strong> {row.get('assignee_name') or '-'}</p>
                             <p><strong>ต้องการส่งต่อให้:</strong> <span style="color:#ea580c; font-weight:bold;">{row.get('handover_to') or '-'}</span></p>
-                            <p><strong>เหตุผลในการส่งต่อ:</strong> {row.get('handover_reason') or 'ไม่ได้ระบุเหตุผล'}</p>
-                            <small>📅 กำหนดส่งงาน: {row.get('due_date') or '-'}</small>
+                            <p><strong>เหตุผล:</strong> {row.get('handover_reason') or 'ไม่ได้ระบุ'}</p>
+                            <small>📅 กำหนดส่ง: {row.get('due_date') or '-'}</small>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -491,16 +533,11 @@ def show_module1_commander_page():
         else:
             st.info("ยังไม่มีข้อมูลคำขอส่งต่องาน")
 
-    # 3. ตรวจรับงาน & ประเมินความพึงพอใจ KPI
     with sub_m3:
         st.subheader("ตรวจรับงานที่ส่งมา & ประเมินความพึงพอใจสำหรับคำนวณ KPI")
-        st.caption("พนักงานที่ส่งงานแล้ว สถานะจะอยู่ช่อง 'In Review' เพื่อรอการอนุมัติความสำเร็จจากผู้สั่งการ")
-
         tasks_df = fetch_tasks()
         if not tasks_df.empty:
             review_tasks = tasks_df[tasks_df["status"] == "In Review"]
-            
-            # ถ้าไม่ใช่ Admin ให้กรองเฉพาะงานที่ตัวเองสั่ง
             if curr_user.get("role") != "Admin" and "creator_username" in review_tasks.columns:
                 review_tasks = review_tasks[review_tasks["creator_username"] == curr_user.get("username")]
 
@@ -513,8 +550,8 @@ def show_module1_commander_page():
                         ontime_badge = "🟢 ส่งตรงเวลา" if is_ontime is True else ("🔴 ส่งเกินกำหนด" if is_ontime is False else "⚪ รอตรวจสอบวันส่ง")
                         
                         st.markdown(f"""
-                        <div class="kanban-card" style="border-left: 5px solid #8b5cf6;">
-                            <div class="kanban-card-title">{row['title']}</div>
+                        <div class="stat-box" style="border-left: 5px solid #8b5cf6;">
+                            <h4 style="margin: 0 0 6px 0; color:#1e293b;">{row['title']}</h4>
                             <p><strong>ผู้รับผิดชอบงาน:</strong> {row.get('assignee_name') or '-'}</p>
                             <p><strong>รายละเอียดงาน:</strong> {row.get('description') or '-'}</p>
                             <p><strong>บันทึก/ลิงก์การส่งงาน:</strong> {row.get('submission_note') or row.get('attachment_url') or '-'}</p>
@@ -529,7 +566,6 @@ def show_module1_commander_page():
                         with col_btn:
                             st.write("")
                             if st.button("🏆 อนุมัติผ่านงาน (Done)", key=f"appr_done_{row['task_id']}", use_container_width=True, type="primary"):
-                                # ถ้าเป็น Routine ให้ตั้งรอบเดือนถัดไป
                                 if row.get("task_type") == "Routine":
                                     old_due = pd.to_datetime(row['due_date']) if row.get('due_date') else datetime.today()
                                     next_month_date = old_due + pd.DateOffset(months=1)
@@ -554,7 +590,7 @@ def show_module1_commander_page():
                                     performed_by=curr_user.get("username"),
                                     details=f"ผู้สั่งการให้คะแนนความพึงพอใจ {rating}/5 ดาว และอนุมัติงานสำเร็จ"
                                 )
-                                st.success(f"อนุมัติงาน '{row['title']}' สำเร็จแล้ว! คะแนนความพึงพอใจถูกส่งไปคำนวณ KPI ในโมดูลที่ 3")
+                                st.success(f"อนุมัติงาน '{row['title']}' สำเร็จแล้ว!")
                                 st.rerun()
 
                             if st.button("↩️ ส่งกลับไปแก้ไข (Revision)", key=f"rev_{row['task_id']}", use_container_width=True):
@@ -573,11 +609,8 @@ def show_module1_commander_page():
         else:
             st.info("ยังไม่มีข้อมูลงานในระบบ")
 
-    # 4. แบบฟอร์มเพิ่มหรือลดคะแนน KPI
     with sub_m4:
         st.subheader("แบบฟอร์มปรับคะแนน KPI พนักงาน (ความดีความชอบ / ความผิดพลาด)")
-        st.caption("คะแนนส่วนนี้จะถูกนำไปคำนวณรวมในแดชบอร์ด KPI โมดูลที่ 3 โดยตรง")
-
         operators = fetch_operators()
         op_list = [op["username"] for op in operators]
         
@@ -591,16 +624,15 @@ def show_module1_commander_page():
                     adj_type = st.radio("ประเภทการปรับคะแนน:", ["ความดีความชอบ (เพิ่มคะแนน +)", "ความผิดพลาด (หักคะแนน -)"])
                 with ca2:
                     points = st.number_input("จำนวนคะแนนที่ปรับ:", min_value=1.0, max_value=50.0, value=5.0, step=1.0)
-                    reason = st.text_area("รายละเอียด / เหตุผลในการปรับคะแนน *", placeholder="เช่น ทำงานสำเร็จก่อนเวลาอย่างยอดเยี่ยม หรือ ส่งเอกสารผิดพลาดไม่ตรวจทาน")
+                    reason = st.text_area("รายละเอียด / เหตุผลในการปรับคะแนน *", placeholder="เช่น มีผลงานดีเยี่ยม หรือ ปฏิบัติงานผิดพลาด")
 
-                adj_submit = st.form_submit_button("⚖️ บันทึกการปรับคะแนน KPI", use_container_width=True)
+                adj_submit = st.form_submit_button("⚖️ บันทึกการปรับคะแนน KPI", use_container_width=True, type="primary")
                 if adj_submit:
                     if not reason:
                         st.error("กรุณาระบุรายละเอียดเหตุผล")
                     else:
                         calc_points = points if "ความดีความชอบ" in adj_type else -points
                         clean_type = "ความดีความชอบ" if "ความดีความชอบ" in adj_type else "ความผิดพลาด"
-                        
                         try:
                             supabase.table("kpi_adjustments").insert({
                                 "username": adj_user,
@@ -611,34 +643,33 @@ def show_module1_commander_page():
                             }).execute()
                             st.success(f"✅ บันทึกการปรับคะแนนให้ @{adj_user} จำนวน {calc_points:+} คะแนน เรียบร้อยแล้ว!")
                         except Exception as e:
-                            st.error(f"ไม่สามารถบันทึกคะแนนได้ (กรุณาตรวจสอบว่ารันไฟล์ database_update.sql ใน Supabase หรือยัง): {e}")
+                            st.error(f"ไม่สามารถบันทึกคะแนนได้: {e}")
 
-# --- Module 2: กระดานงาน (Kanban Board & Task Tracking) ---
+# --- Module 2: กระดานงาน (Kanban & Showcase Board - Image 1 Style) ---
 
 def show_module2_kanban_page():
     curr_user = st.session_state.user
     curr_username = curr_user.get("username")
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
 
-    st.header("📋 โมดูลที่ 2: กระดานงาน (Task Kanban Board)")
-    st.caption("ทุกคนสามารถเข้าดูและอัปเดตงานได้ | การอนุมัติการแก้ไข/ส่งงาน/ส่งต่อ สงวนสิทธิ์เฉพาะผู้มียศสั่งการ")
+    # Header section
+    st.markdown("""
+        <div style="margin-bottom: 1.25rem;">
+            <h2 style="color: #991b1b; font-weight: 700; margin-bottom: 0.2rem;">📋 โมดูลที่ 2: กระดานงาน (Task Showcase & Kanban Board)</h2>
+            <p style="color: #64748b;">ติดตามสถานะงาน คัดกรองตัวงานตามผู้รับผิดชอบและวันส่ง พร้อมส่งงานและขอส่งต่องาน</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     df = fetch_tasks()
 
-    # --- ส่วนการแจ้งเตือนงานใหม่ & งานใกล้ครบกำหนดส่ง ---
+    # --- แจ้งเตือนงานใหม่ & งานใกล้ครบกำหนดส่ง ---
     if not df.empty and "due_date" in df.columns:
         today_dt = datetime.today().date()
-        
-        # 1. แจ้งเตือนงานเข้าใหม่สำหรับผู้ใช้นี้
         if "assignee_name" in df.columns:
-            my_new_tasks = df[
-                (df["assignee_name"].fillna("").str.contains(curr_username)) & 
-                (df["status"] == "To Do")
-            ]
-            if not my_new_tasks.empty:
-                st.info(f"🔔 **แจ้งเตือนงานใหม่:** คุณมีงานที่รอเริ่มดำเนินการทั้งหมด **{len(my_new_tasks)} งาน** ในช่อง 'To Do'")
+            my_new = df[(df["assignee_name"].fillna("").str.contains(curr_username)) & (df["status"] == "To Do")]
+            if not my_new.empty:
+                st.info(f"🔔 **งานใหม่มอบหมายถึงคุณ:** มีงานรอเริ่มดำเนินการทั้งหมด **{len(my_new)} งาน** ในช่อง To Do")
 
-        # 2. แจ้งเตือนงานใกล้ครบกำหนด 3 วัน หรือ เลยกำหนด
         warning_tasks = []
         overdue_tasks = []
         for _, row in df.iterrows():
@@ -647,340 +678,494 @@ def show_module2_kanban_page():
                     due_dt = pd.to_datetime(row["due_date"]).date()
                     diff = (due_dt - today_dt).days
                     if diff < 0:
-                        overdue_tasks.append(f"**{row['title']}** (เกินกำหนด {abs(diff)} วัน)")
+                        overdue_tasks.append(f"**{row['title']}** ({abs(diff)} วัน)")
                     elif diff <= 3:
-                        warning_tasks.append(f"**{row['title']}** (เหลืออีก {diff} วัน)")
+                        warning_tasks.append(f"**{row['title']}** (เหลือ {diff} วัน)")
                 except Exception:
                     pass
 
         if overdue_tasks:
-            st.error(f"🚨 **งานเลยกำหนดส่ง (Overdue):** {', '.join(overdue_tasks[:3])}{' และอื่นๆ...' if len(overdue_tasks) > 3 else ''}")
+            st.error(f"🚨 **งานเกินกำหนดส่ง (Overdue):** {', '.join(overdue_tasks[:3])}")
         if warning_tasks:
-            st.warning(f"⚠️ **แจ้งเตือนใกล้ครบกำหนดส่งล่วงหน้า 3 วัน:** {', '.join(warning_tasks[:3])}{' และอื่นๆ...' if len(warning_tasks) > 3 else ''}")
+            st.warning(f"⚠️ **เตือนล่วงหน้า 3 วัน:** {', '.join(warning_tasks[:3])}")
 
-    # --- Kanban Columns Display ---
-    statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
-    cols = st.columns(len(statuses))
+    # --- ตัวกรองสไตล์ภาพที่ 1 (The Booking / Filter Bar) ---
+    st.markdown('<div class="booking-filter-bar">', unsafe_allow_html=True)
+    st.markdown("<h5 style='color: #991b1b; margin-top:0; margin-bottom: 12px;'>🔍 ค้นหาและกรองตัวงาน (Filter Bar)</h5>", unsafe_allow_html=True)
+    
+    operators = fetch_operators()
+    assignee_options = ["ทั้งหมด"] + [op["username"] for op in operators]
+    status_options = ["ทั้งหมด", "To Do", "In Progress", "In Review", "Revision", "Done"]
+    type_options = ["ทั้งหมด", "Project", "Routine"]
 
-    for idx, status in enumerate(statuses):
-        with cols[idx]:
-            count = len(df[df['status'] == status]) if not df.empty and 'status' in df.columns else 0
-            st.markdown(f"### {status} ({count})")
-            
-            if not df.empty and 'status' in df.columns:
-                status_df = df[df['status'] == status]
-                for _, row in status_df.iterrows():
-                    badge_class = "badge-project" if row.get('task_type') == "Project" else "badge-routine"
-                    urgent_badge = '<span class="badge-urgent">🔥 Urgent</span>' if row.get('priority') == 'Urgent' else ''
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    with f_col1:
+        filter_assignee = st.selectbox("👤 ผู้รับผิดชอบ (Assignee)", assignee_options, key="f_assignee")
+    with f_col2:
+        filter_date = st.date_input("📅 วันที่กำหนดส่ง (จากปฏิทิน)", value=None, key="f_date")
+    with f_col3:
+        filter_status = st.selectbox("📌 สถานะงาน (Status)", status_options, key="f_status")
+    with f_col4:
+        filter_type = st.selectbox("🏷️ ประเภทงาน (Type)", type_options, key="f_type")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # กรองข้อมูล
+    filtered_df = df.copy() if not df.empty else pd.DataFrame()
+    if not filtered_df.empty:
+        if filter_assignee != "ทั้งหมด" and "assignee_name" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["assignee_name"].fillna("").str.contains(filter_assignee)]
+        if filter_date is not None and "due_date" in filtered_df.columns:
+            target_str = filter_date.strftime("%Y-%m-%d")
+            filtered_df = filtered_df[filtered_df["due_date"] == target_str]
+        if filter_status != "ทั้งหมด" and "status" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["status"] == filter_status]
+        if filter_type != "ทั้งหมด" and "task_type" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["task_type"] == filter_type]
+
+    # สลับมุมมอง: การ์ด Showcase (ภาพที่ 1) vs กระดาน Kanban
+    view_mode = st.radio("รูปแบบการแสดงผล:", ["🗂️ มุมมองการ์ดพรีเมียม (Showcase Grid)", "📊 มุมมองกระดานแบ่งช่อง (Kanban Columns)"], horizontal=True)
+
+    if filtered_df.empty:
+        st.info("ไม่พบรายการงานที่ตรงตามเงื่อนไขตัวกรอง")
+        return
+
+    # 1. มุมมองการ์ด Showcase (เหมือนภาพที่ 1 "Our Elite Fleet")
+    if view_mode == "🗂️ มุมมองการ์ดพรีเมียม (Showcase Grid)":
+        st.markdown(f"##### 🚗 รายการตัวงานที่แสดงผล ({len(filtered_df)} รายการ)")
+        
+        # จัดเรียงเป็นการ์ด Grid 3 คอลัมน์
+        cols_per_row = 3
+        rows = [filtered_df.iloc[i:i + cols_per_row] for i in range(0, len(filtered_df), cols_per_row)]
+        
+        for row_batch in rows:
+            grid_cols = st.columns(cols_per_row)
+            for col_idx, (_, row) in enumerate(row_batch.iterrows()):
+                with grid_cols[col_idx]:
+                    status = row.get("status", "To Do")
+                    due_date_val = row.get("due_date")
                     
-                    # คำนวณวันกำหนดส่งและการแจ้งเตือน
-                    alert_class = ""
-                    alert_text = ""
-                    days_diff = None
-                    if status != 'Done' and row.get('due_date'):
+                    # คลาสเตือน
+                    card_class = "showcase-card"
+                    alert_badge = ""
+                    if status == "Done":
+                        card_class += " showcase-card-done"
+                        alert_badge = '<span class="badge-pill badge-green">✅ เสร็จสิ้น</span>'
+                    elif due_date_val:
                         try:
-                            due_dt = pd.to_datetime(row['due_date']).date()
-                            days_diff = (due_dt - datetime.today().date()).days
-                            if days_diff < 0:
-                                alert_class = "kanban-card-overdue"
-                                alert_text = f'<br/><span style="color:#ef4444; font-size:0.75rem; font-weight:bold;">🚨 เกินกำหนด ({abs(days_diff)} วัน)</span>'
-                            elif days_diff <= 3:
-                                alert_class = "kanban-card-warning"
-                                alert_text = f'<br/><span style="color:#d97706; font-size:0.75rem; font-weight:bold;">⚠️ ใกล้ครบกำหนด (เหลือ {days_diff} วัน)</span>'
+                            due_dt = pd.to_datetime(due_date_val).date()
+                            diff = (due_dt - datetime.today().date()).days
+                            if diff < 0:
+                                card_class += " showcase-card-overdue"
+                                alert_badge = f'<span class="badge-pill badge-red">🚨 เกิน {abs(diff)} วัน</span>'
+                            elif diff <= 3:
+                                card_class += " showcase-card-warning"
+                                alert_badge = f'<span class="badge-pill badge-gold">⚠️ เหลือ {diff} วัน</span>'
                         except Exception:
                             pass
-                    
-                    # ตรวจสอบสถานะการส่งต่อ
-                    handover_pending = row.get("handover_status") == "Pending"
-                    if handover_pending:
-                        alert_class = "kanban-card-handover"
-                        alert_text += '<br/><span style="color:#ea580c; font-size:0.75rem; font-weight:bold;">🔄 มีคำขอส่งต่องาน (รออนุมัติ)</span>'
 
-                    # การ์ดแสดงผล
-                    creator = row.get("creator_username") or row.get("requester_name") or "-"
-                    assignees = row.get("assignee_name") or row.get("assignees") or "-"
-                    
+                    type_badge = f'<span class="badge-pill badge-blue">{row.get("task_type", "Task")}</span>'
+                    urg_badge = f'<span class="badge-pill badge-red">🔥 {row.get("priority")}</span>' if row.get("priority") == "Urgent" else ""
+                    handover_badge = '<span class="badge-pill badge-purple">🔄 ขอส่งต่อ</span>' if row.get("handover_status") == "Pending" else ""
+
                     st.markdown(f"""
-                    <div class="kanban-card {alert_class}">
-                        <span class="{badge_class}">{row.get('task_type', 'Task')}</span> {urgent_badge}
-                        <div class="kanban-card-title">{row.get('title', 'ไม่มีชื่อ')}</div>
-                        <small>👑 <strong>ผู้สั่งการ:</strong> @{creator}</small><br/>
-                        <small>👥 <strong>ผู้ปฏิบัติ:</strong> {assignees}</small><br/>
-                        <small>📅 <strong>กำหนดส่ง:</strong> {row.get('due_date') or '-'}</small>{alert_text}
-                    </div>
+                        <div class="{card_class}">
+                            <div>
+                                {type_badge} {urg_badge} {alert_badge} {handover_badge}
+                                <div class="showcase-title">{row.get('title', 'ไม่มีชื่อ')}</div>
+                                <p style="color:#64748b; font-size:0.85rem; margin-bottom:8px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                                    {row.get('description') or 'ไม่มีรายละเอียดงาน'}
+                                </p>
+                            </div>
+                            <div style="border-top: 1px solid #fee2e2; padding-top: 10px; margin-top: 10px;">
+                                <small style="color: #64748b;">👑 <strong>ผู้สั่งการ:</strong> @{row.get('creator_username') or '-'}</small><br/>
+                                <small style="color: #64748b;">👥 <strong>ผู้ปฏิบัติ:</strong> {row.get('assignee_name') or '-'}</small><br/>
+                                <small style="color: #64748b;">📅 <strong>กำหนดส่ง:</strong> <span style="font-weight:600; color:#991b1b;">{row.get('due_date') or '-'}</span></small><br/>
+                                <small style="color: #64748b;">📌 <strong>สถานะ:</strong> <b>{status}</b></small>
+                            </div>
+                        </div>
                     """, unsafe_allow_html=True)
 
-                    # เมนูจัดการภายในการ์ดงาน
-                    with st.expander(f"🔍 รายละเอียด & จัดการงาน"):
-                        st.markdown(f"**รายละเอียดงาน:**")
-                        st.info(row.get('description') or 'ไม่มีรายละเอียด')
-                        
+                    # Popover การจัดการงาน
+                    with st.popover(f"⚙️ จัดการงาน: {row.get('title')[:15]}...", use_container_width=True):
+                        st.markdown(f"**ชื่องาน:** {row.get('title')}")
+                        st.markdown(f"**รายละเอียด:** {row.get('description') or '-'}")
                         if row.get('attachment_url'):
                             st.markdown(f"📎 [คลิกเปิดดูไฟล์แนบ]({row['attachment_url']})")
 
-                        # แสดงประวัติการทำงาน (Audit Trail)
+                        # ประวัติงาน
                         logs = fetch_task_logs(row['task_id'])
                         if logs:
-                            st.markdown("📜 **ประวัติงานและการส่งต่อ:**")
-                            for l in logs[:3]:
-                                st.caption(f"• {l.get('created_at', '')[:16]} - **{l.get('action')}** โดย @{l.get('performed_by')}: {l.get('details')}")
+                            st.caption("📜 **ประวัติงานล่าสุด:**")
+                            for l in logs[:2]:
+                                st.caption(f"• {l.get('created_at', '')[:10]}: {l.get('action')} โดย @{l.get('performed_by')}")
 
                         st.divider()
 
-                        # ฟังก์ชันการทำงานของพนักงาน
+                        # ส่งงาน
                         if status in ['To Do', 'Revision']:
-                            if st.button("🚀 เริ่มดำเนินงาน (ย้ายไป In Progress)", key=f"start_{row['task_id']}", use_container_width=True):
+                            if st.button("🚀 เริ่มงาน (In Progress)", key=f"sc_start_{row['task_id']}", use_container_width=True):
                                 supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", row["task_id"]).execute()
                                 log_task_action(row["task_id"], "เริ่มดำเนินงาน", curr_username, "เปลี่ยนสถานะเป็น In Progress")
                                 st.rerun()
 
                         if status == 'In Progress':
-                            st.markdown("##### 📤 ส่งงานเพื่อรอการอนุมัติ")
-                            sub_note = st.text_input("ลิงก์งานที่ทำเสร็จ หรือ หมายเหตุการส่ง:", key=f"sub_note_{row['task_id']}")
-                            if st.button("✅ ส่งงานเพื่อรออนุมัติ (Submit)", key=f"sub_btn_{row['task_id']}", use_container_width=True, type="primary"):
-                                # คำนวณว่าทันกำหนดส่งหรือไม่
+                            sub_note = st.text_input("ลิงก์ส่งงาน / หมายเหตุ:", key=f"sc_note_{row['task_id']}")
+                            if st.button("✅ ส่งงานเพื่อรออนุมัติ", key=f"sc_sub_{row['task_id']}", use_container_width=True, type="primary"):
                                 is_ontime = True
                                 if row.get("due_date"):
                                     try:
-                                        due_dt = pd.to_datetime(row['due_date']).date()
-                                        if datetime.today().date() > due_dt:
+                                        if datetime.today().date() > pd.to_datetime(row['due_date']).date():
                                             is_ontime = False
                                     except Exception:
                                         pass
-
                                 supabase.table("tasks").update({
                                     "status": "In Review",
                                     "submission_note": sub_note,
                                     "completed_at": datetime.now().isoformat(),
                                     "is_ontime": is_ontime
                                 }).eq("task_id", row["task_id"]).execute()
-
-                                result_text = "ส่งตรงเวลา (+KPI)" if is_ontime else "ส่งล่าช้า (-KPI)"
-                                log_task_action(
-                                    row["task_id"], 
-                                    "ส่งงานเพื่อรออนุมัติ", 
-                                    curr_username, 
-                                    f"พนักงานส่งงาน ({result_text}) หมายเหตุ: {sub_note}"
-                                )
-                                st.success("ส่งงานเรียบร้อยแล้ว งานถูกย้ายไปช่อง 'In Review' เพื่อรอผู้สั่งการอนุมัติ!")
+                                log_task_action(row["task_id"], "ส่งงานเพื่อรออนุมัติ", curr_username, f"ผล: {'ตรงเวลา' if is_ontime else 'ล่าช้า'}")
+                                st.success("ส่งงานสำเร็จ!")
                                 st.rerun()
 
-                        # ฟังก์ชันส่งงานต่อให้พนักงานคนอื่น
+                        # ขอส่งงานต่อ
                         if status not in ['Done', 'In Review']:
-                            with st.popover("🤝 ขอส่งงานต่อให้ผู้อื่น"):
-                                st.markdown("ส่งงานต่อให้พนักงานคนอื่น (ต้องรอผู้สั่งการอนุมัติ)")
-                                all_ops = fetch_operators()
-                                target_op = st.selectbox("เลือกพนักงานปลายทาง:", [op["username"] for op in all_ops if op["username"] != curr_username], key=f"ho_to_{row['task_id']}")
-                                ho_reason = st.text_area("เหตุผลในการส่งต่อ:", key=f"ho_rs_{row['task_id']}")
-                                if st.button("ส่งคำขอส่งต่องาน", key=f"ho_btn_{row['task_id']}"):
-                                    if not ho_reason:
-                                        st.error("กรุณาระบุเหตุผล")
-                                    else:
+                            with st.expander("🤝 ขอส่งงานต่อให้ผู้อื่น"):
+                                target_op = st.selectbox("เลือกผู้รับต่อ:", [op["username"] for op in operators if op["username"] != curr_username], key=f"sc_hoto_{row['task_id']}")
+                                ho_rs = st.text_area("เหตุผล:", key=f"sc_hors_{row['task_id']}")
+                                if st.button("ส่งคำขอ", key=f"sc_hobtn_{row['task_id']}"):
+                                    if ho_rs:
                                         supabase.table("tasks").update({
                                             "handover_to": target_op,
-                                            "handover_reason": ho_reason,
+                                            "handover_reason": ho_rs,
                                             "handover_status": "Pending"
                                         }).eq("task_id", row["task_id"]).execute()
-                                        log_task_action(
-                                            row["task_id"],
-                                            "ขอส่งงานต่อ",
-                                            curr_username,
-                                            f"ขอส่งต่อให้ @{target_op} เหตุผล: {ho_reason}"
-                                        )
-                                        st.success("ส่งคำขอเรียบร้อยแล้ว! กำลังรอผู้สั่งการอนุมัติในโมดูลที่ 1")
+                                        log_task_action(row["task_id"], "ขอส่งงานต่อ", curr_username, f"ขอส่งให้ @{target_op}")
+                                        st.success("ส่งคำขอแล้ว รอผู้สั่งการอนุมัติ!")
                                         st.rerun()
 
-                        # สิทธิ์การแก้ไขโดยตรง (เฉพาะระดับสั่งการ)
+                        # ผู้สั่งการย้ายโดยตรง
                         if is_commander:
-                            st.markdown("---")
-                            st.caption("⚙️ สิทธิ์ระดับสั่งการ: ย้ายการ์ดโดยตรงหรือลบงาน")
-                            new_stat = st.selectbox("ย้ายสถานะโดยตรง:", statuses, index=statuses.index(status), key=f"sel_{row['task_id']}")
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                if st.button("บันทึกสถานะ", key=f"upd_{row['task_id']}", use_container_width=True):
-                                    supabase.table("tasks").update({"status": new_stat}).eq("task_id", row["task_id"]).execute()
-                                    log_task_action(row["task_id"], "ย้ายสถานะโดยผู้สั่งการ", curr_username, f"ย้ายไป {new_stat}")
-                                    st.rerun()
-                            with c2:
-                                if st.button("🗑️ ลบงาน", key=f"del_{row['task_id']}", use_container_width=True):
-                                    supabase.table("tasks").delete().eq("task_id", row["task_id"]).execute()
-                                    st.toast("ลบงานสำเร็จ")
-                                    st.rerun()
+                            st.divider()
+                            st.caption("สิทธิ์ผู้สั่งการ: เปลี่ยนสถานะโดยตรง")
+                            all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
+                            new_s = st.selectbox("ย้ายไปที่:", all_stats, index=all_stats.index(status), key=f"sc_sel_{row['task_id']}")
+                            if st.button("อัปเดตสถานะ", key=f"sc_upd_{row['task_id']}"):
+                                supabase.table("tasks").update({"status": new_s}).eq("task_id", row["task_id"]).execute()
+                                st.rerun()
 
-# --- Module 3: แดชบอร์ดคะแนน KPI (KPI Dashboard) ---
+    # 2. มุมมองกระดานแบ่งช่อง (Kanban Columns)
+    else:
+        statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
+        cols = st.columns(len(statuses))
+        for idx, status in enumerate(statuses):
+            with cols[idx]:
+                col_df = filtered_df[filtered_df['status'] == status] if 'status' in filtered_df.columns else pd.DataFrame()
+                st.markdown(f"#### {status} ({len(col_df)})")
+                for _, row in col_df.iterrows():
+                    st.markdown(f"""
+                        <div class="stat-box" style="padding: 12px; margin-bottom: 8px;">
+                            <span class="badge-pill badge-blue" style="font-size:0.65rem;">{row.get('task_type')}</span>
+                            <div style="font-weight:700; font-size:0.95rem; margin: 4px 0;">{row.get('title')}</div>
+                            <small>👤 {row.get('assignee_name') or '-'}</small><br/>
+                            <small>📅 {row.get('due_date') or '-'}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+# --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานย้อนหลัง (Image 2 Style) ---
 
 def show_module3_kpi_dashboard():
     curr_user = st.session_state.user
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
 
-    st.header("📊 โมดูลที่ 3: แดชบอร์ดคะแนน KPI พนักงาน (KPI Dashboard)")
-    st.caption("คำนวณจากปริมาณงาน, การส่งตรงเวลา/ล่าช้า, คะแนนประเมินความพึงพอใจ, และการปรับแต้มความดีความชอบ/ความผิดพลาด")
+    # Header สไตล์ภาพที่ 2
+    today_thai = datetime.today().strftime("%d ตุลาคม %Y")
+    st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <div>
+                <h2 style="color: #991b1b; font-weight: 700; margin: 0;">📊 แดชบอร์ด & รายงานผลงาน (KPI & Reports)</h2>
+                <p style="color: #64748b; margin: 0; font-size: 0.95rem;">ข้อมูลประจำวัน: วันนี้ {today_thai} · สำนักงานใหญ่</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # ดึงเฉพาะผู้ใช้งานที่มียศ 'ปฏิบัติงาน'
     all_users = fetch_all_users()
-    operators = []
-    for u in all_users:
-        u_roles = parse_roles(u.get("roles"))
-        if "ปฏิบัติงาน" in u_roles:
-            operators.append(u)
-
-    if not operators:
-        st.warning("ยังไม่มีพนักงานที่มียศ 'ปฏิบัติงาน' ในระบบ")
-        return
-
-    # ดึงข้อมูลงานทั้งหมด
+    operators = [u for u in all_users if "ปฏิบัติงาน" in parse_roles(u.get("roles"))]
     tasks_df = fetch_tasks()
     adjustments = fetch_kpi_adjustments()
 
-    # ประมวลผลคะแนน KPI ของพนักงานแต่ละคน
+    # --- แถวสรุปตัวเลขสถิติ (Stat Summary Cards แบบภาพที่ 2) ---
+    total_tasks_count = len(tasks_df) if not tasks_df.empty else 0
+    done_count = len(tasks_df[tasks_df["status"] == "Done"]) if not tasks_df.empty and "status" in tasks_df.columns else 0
+    prog_count = len(tasks_df[tasks_df["status"] == "In Progress"]) if not tasks_df.empty and "status" in tasks_df.columns else 0
+    review_count = len(tasks_df[tasks_df["status"] == "In Review"]) if not tasks_df.empty and "status" in tasks_df.columns else 0
+    
+    # งานที่เกินกำหนดส่ง
+    overdue_count = 0
+    if not tasks_df.empty and "due_date" in tasks_df.columns:
+        for _, t in tasks_df.iterrows():
+            if t.get("status") != "Done" and t.get("due_date"):
+                try:
+                    if pd.to_datetime(t["due_date"]).date() < datetime.today().date():
+                        overdue_count += 1
+                except Exception:
+                    pass
+
+    st1, st2, st3, st4, st5, st6 = st.columns(6)
+    with st1:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#b91c1c;"></span>งานทั้งหมด</div>
+                <div class="stat-number">{total_tasks_count} <span style="font-size:1rem; font-weight:normal; color:#64748b;">งาน</span></div>
+                <div class="stat-sub">ในระบบทั้งหมด</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with st2:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#10b981;"></span>งานสำเร็จแล้ว</div>
+                <div class="stat-number" style="color:#10b981;">{done_count} <span style="font-size:1rem; font-weight:normal; color:#64748b;">งาน</span></div>
+                <div class="stat-sub">{'100' if total_tasks_count == 0 else round(done_count/total_tasks_count*100)}% ของงานทั้งหมด</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with st3:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#3b82f6;"></span>กำลังดำเนินการ</div>
+                <div class="stat-number" style="color:#3b82f6;">{prog_count} <span style="font-size:1rem; font-weight:normal; color:#64748b;">งาน</span></div>
+                <div class="stat-sub">สถานะ In Progress</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with st4:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#f59e0b;"></span>รอการอนุมัติ</div>
+                <div class="stat-number" style="color:#f59e0b;">{review_count} <span style="font-size:1rem; font-weight:normal; color:#64748b;">งาน</span></div>
+                <div class="stat-sub">สถานะ In Review</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with st5:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#ef4444;"></span>งานเกินกำหนด</div>
+                <div class="stat-number" style="color:#ef4444;">{overdue_count} <span style="font-size:1rem; font-weight:normal; color:#64748b;">งาน</span></div>
+                <div class="stat-sub">ต้องรีบติดตาม</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with st6:
+        st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label"><span class="stat-dot" style="background:#8b5cf6;"></span>พนักงานปฏิบัติ</div>
+                <div class="stat-number" style="color:#8b5cf6;">{len(operators)} <span style="font-size:1rem; font-weight:normal; color:#64748b;">คน</span></div>
+                <div class="stat-sub">ผู้มีสิทธิ์คำนวณ KPI</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # --- การประมวลผลคะแนน KPI รายบุคคล ---
     kpi_records = []
     for op in operators:
         uname = op.get("username")
         fullname = op.get("fullname") or uname
         
-        # ค้นหางานที่พนักงานคนนี้ได้รับมอบหมาย
-        if not tasks_df.empty and "assignee_name" in tasks_df.columns:
-            user_tasks = tasks_df[tasks_df["assignee_name"].fillna("").str.contains(uname)]
-        else:
-            user_tasks = pd.DataFrame()
-
-        total_tasks = len(user_tasks)
-        done_tasks = len(user_tasks[user_tasks["status"] == "Done"]) if not user_tasks.empty else 0
+        user_tasks = tasks_df[tasks_df["assignee_name"].fillna("").str.contains(uname)] if not tasks_df.empty and "assignee_name" in tasks_df.columns else pd.DataFrame()
+        total_t = len(user_tasks)
+        done_t = len(user_tasks[user_tasks["status"] == "Done"]) if not user_tasks.empty else 0
         
-        # งานส่งทัน vs ส่งช้า
-        ontime_count = 0
-        late_count = 0
-        satisfaction_scores = []
-
+        ontime_c = 0
+        late_c = 0
+        satisfactions = []
         if not user_tasks.empty:
             for _, t in user_tasks.iterrows():
                 if t.get("status") == "Done":
                     if t.get("is_ontime") is True:
-                        ontime_count += 1
+                        ontime_c += 1
                     elif t.get("is_ontime") is False:
-                        late_count += 1
-                    
+                        late_c += 1
                     rating = t.get("satisfaction_rating")
                     if rating and rating > 0:
-                        satisfaction_scores.append(rating)
+                        satisfactions.append(rating)
 
-        avg_rating = sum(satisfaction_scores) / len(satisfaction_scores) if satisfaction_scores else 5.0
-        
-        # คะแนนปรับแก้ความดีความชอบ / ความผิดพลาด
+        avg_sat = sum(satisfactions) / len(satisfactions) if satisfactions else 5.0
         user_adjs = [a for a in adjustments if a.get("username") == uname]
-        manual_points = sum(float(a.get("points", 0)) for a in user_adjs)
-
-        # สูตรคำนวณ KPI:
-        # Base: งานสำเร็จ x 5 คะแนน
-        # On-time: +10 คะแนนต่องาน
-        # Late: -5 คะแนนต่องาน
-        # Rating: เฉลี่ย x 4 คะแนน
-        # Manual: บวกหรือลบตามที่สั่งการปรับ
-        task_points = (done_tasks * 5) + (ontime_count * 10) - (late_count * 5)
-        rating_points = avg_rating * 4
-        total_kpi = max(0, round(task_points + rating_points + manual_points, 1))
+        manual_p = sum(float(a.get("points", 0)) for a in user_adjs)
+        
+        total_kpi = max(0, round((done_t * 5) + (ontime_c * 10) - (late_c * 5) + (avg_sat * 4) + manual_p, 1))
 
         kpi_records.append({
             "username": uname,
             "fullname": fullname,
-            "total_tasks": total_tasks,
-            "done_tasks": done_tasks,
-            "ontime_count": ontime_count,
-            "late_count": late_count,
-            "avg_rating": round(avg_rating, 1),
-            "manual_points": manual_points,
+            "total_tasks": total_t,
+            "done_tasks": done_t,
+            "ontime_count": ontime_c,
+            "late_count": late_c,
+            "avg_rating": round(avg_sat, 1),
+            "manual_points": manual_p,
             "total_kpi": total_kpi
         })
 
     kpi_df = pd.DataFrame(kpi_records)
-    kpi_df = kpi_df.sort_values(by="total_kpi", ascending=False).reset_index(drop=True)
-
-    # --- Top Metrics Banner ---
-    m1, m2, m3, m4 = st.columns(4)
     if not kpi_df.empty:
-        top_user = kpi_df.iloc[0]
-        m1.metric("🏆 ผู้มีคะแนน KPI สูงสุด", f"{top_user['fullname']}", f"{top_user['total_kpi']} แต้ม")
-        total_done = kpi_df["done_tasks"].sum()
-        total_ontime = kpi_df["ontime_count"].sum()
-        ontime_rate = round((total_ontime / total_done * 100), 1) if total_done > 0 else 100
-        m2.metric("✅ งานที่เสร็จสิ้นทั้งหมด", f"{total_done} งาน")
-        m3.metric("🎯 อัตราส่งตรงเวลา (On-time)", f"{ontime_rate}%")
-        m4.metric("👥 พนักงานปฏิบัติงาน", f"{len(kpi_df)} คน")
+        kpi_df = kpi_df.sort_values(by="total_kpi", ascending=False).reset_index(drop=True)
 
-    st.markdown("---")
+    # --- แท็บย่อย: 1. สรุปแดชบอร์ด KPI  |  2. รายงานผลงานย้อนหลัง ---
+    tab_overview, tab_history = st.tabs([
+        "📈 สรุปแดชบอร์ดคะแนน KPI (Dashboard Overview)", 
+        "📜 รายงานผลงานเก่า & เรียกดูย้อนหลัง (Historical Work Report)"
+    ])
 
-    # --- Charts & Visualization ---
-    c_left, c_right = st.columns(2)
-    with c_left:
-        st.subheader("📈 อันดับคะแนน KPI รวม (Leaderboard)")
-        fig_bar = px.bar(
-            kpi_df, 
-            x="fullname", 
-            y="total_kpi", 
-            text="total_kpi",
-            labels={"fullname": "พนักงาน", "total_kpi": "คะแนน KPI รวม"},
-            color="total_kpi",
-            color_continuous_scale="Teal"
-        )
-        fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig_bar, use_container_width=True)
+    # 1. แดชบอร์ดภาพรวม (สไตล์ภาพที่ 2 แบบแบ่งซ้าย-ขวา)
+    with tab_overview:
+        c_left, c_right = st.columns([2, 1])
 
-    with c_right:
-        st.subheader("⏱️ สัดส่วนงาน: ตรงเวลา vs ล่าช้า")
-        fig_time = px.bar(
-            kpi_df,
-            x="fullname",
-            y=["ontime_count", "late_count"],
-            labels={"value": "จำนวนงาน", "fullname": "พนักงาน", "variable": "ประเภท"},
-            barmode="group",
-            color_discrete_map={"ontime_count": "#10b981", "late_count": "#ef4444"}
-        )
-        fig_time.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig_time, use_container_width=True)
+        with c_left:
+            st.subheader("📋 ตารางคะแนน KPI และประสิทธิภาพรายบุคคล")
+            if not kpi_df.empty:
+                display_kpi = kpi_df.rename(columns={
+                    "fullname": "ชื่อ-สกุล",
+                    "username": "Username",
+                    "total_tasks": "งานทั้งหมด",
+                    "done_tasks": "สำเร็จ",
+                    "ontime_count": "ตรงเวลา",
+                    "late_count": "ส่งช้า",
+                    "avg_rating": "ดาวเฉลี่ย ⭐",
+                    "manual_points": "แต้มพิเศษ",
+                    "total_kpi": "คะแนน KPI รวม"
+                })
+                st.dataframe(display_kpi, use_container_width=True, hide_index=True)
 
-    # --- Data Table Breakdown ---
-    st.subheader("📋 ตารางแจกแจงรายละเอียดคะแนน KPI รายบุคคล")
-    display_df = kpi_df.rename(columns={
-        "fullname": "ชื่อ-นามสกุล",
-        "username": "Username",
-        "total_tasks": "งานทั้งหมด",
-        "done_tasks": "งานที่เสร็จ",
-        "ontime_count": "ส่งทันเวลา",
-        "late_count": "ส่งล่าช้า",
-        "avg_rating": "ดาวเฉลี่ย ⭐",
-        "manual_points": "แต้มพิเศษ/ปรับลด",
-        "total_kpi": "คะแนน KPI รวม"
-    })
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                fig_bar = px.bar(
+                    kpi_df, 
+                    x="fullname", 
+                    y="total_kpi", 
+                    text="total_kpi",
+                    labels={"fullname": "พนักงาน", "total_kpi": "คะแนน KPI รวม"},
+                    color="total_kpi",
+                    color_continuous_scale="Reds"
+                )
+                fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", margin=dict(t=20, b=20, l=20, r=20))
+                st.plotly_chart(fig_bar, use_container_width=True)
 
-    # --- สิทธิ์การแก้ไขคะแนน KPI (เฉพาะยศระดับสั่งการ) ---
-    if is_commander:
-        st.markdown("---")
-        with st.expander("⚙️ เครื่องมือปรับคะแนน KPI โดยตรง (เฉพาะผู้มียศระดับสั่งการ)"):
-            st.caption("ผู้มียศสั่งการสามารถเพิ่มหรือลดคะแนน KPI เพื่อแก้ไขคะแนนในระบบได้ทันที")
-            with st.form("quick_adj_form"):
-                eq1, eq2, eq3 = st.columns(3)
-                with eq1:
-                    target_emp = st.selectbox("เลือกพนักงาน:", [op.get("username") for op in operators], key="q_emp")
-                with eq2:
-                    adj_pts = st.number_input("คะแนนที่ต้องการเพิ่ม (+) หรือ ลด (-):", value=5.0, step=1.0, key="q_pts")
-                with eq3:
-                    reason_txt = st.text_input("หมายเหตุการแก้ไขคะแนน:", placeholder="เช่น ปรับเพิ่มพิเศษประจำเดือน", key="q_rs")
+        with c_right:
+            # Widget สรุปงานครบกำหนดเร็วๆ นี้ (คล้ายกล่อง "รถคืนวันนี้" ในภาพที่ 2)
+            st.markdown("""
+                <div class="stat-box" style="margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 10px 0; color: #991b1b;">⏱️ งานครบกำหนดส่งเร็วๆ นี้ (ใน 3 วัน)</h4>
+            """, unsafe_allow_html=True)
+            
+            near_due_tasks = []
+            if not tasks_df.empty and "due_date" in tasks_df.columns:
+                for _, t in tasks_df.iterrows():
+                    if t.get("status") != "Done" and t.get("due_date"):
+                        try:
+                            diff = (pd.to_datetime(t["due_date"]).date() - datetime.today().date()).days
+                            if 0 <= diff <= 3:
+                                near_due_tasks.append((t, diff))
+                        except Exception:
+                            pass
+
+            if not near_due_tasks:
+                st.markdown("<p style='color:#64748b; font-size:0.9rem;'>ไม่มีงานครบกำหนดส่งใน 3 วันนี้</p>", unsafe_allow_html=True)
+            else:
+                for t, diff in near_due_tasks[:5]:
+                    st.markdown(f"""
+                        <div style="border-bottom: 1px solid #fee2e2; padding: 8px 0;">
+                            <strong>{t['title']}</strong><br/>
+                            <small style="color:#64748b;">👤 {t.get('assignee_name') or '-'} | 📅 กำหนดส่ง: {t.get('due_date')}</small><br/>
+                            <span class="badge-pill badge-gold">เหลือ {diff} วัน</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # เครื่องมือปรับคะแนน KPI โดยตรงสำหรับผู้มียศสั่งการ
+            if is_commander:
+                with st.expander("⚙️ ปรับคะแนน KPI โดยตรง"):
+                    with st.form("direct_adj"):
+                        t_emp = st.selectbox("เลือกพนักงาน:", [op.get("username") for op in operators])
+                        t_pts = st.number_input("คะแนน (+/-):", value=5.0, step=1.0)
+                        t_rs = st.text_input("เหตุผล:")
+                        if st.form_submit_button("บันทึกคะแนน"):
+                            clean_t = "ความดีความชอบ" if t_pts >= 0 else "ความผิดพลาด"
+                            supabase.table("kpi_adjustments").insert({
+                                "username": t_emp,
+                                "points": t_pts,
+                                "reason_type": clean_t,
+                                "description": t_rs,
+                                "created_by": curr_user.get("username")
+                            }).execute()
+                            st.success("บันทึกคะแนนแล้ว!")
+                            st.rerun()
+
+    # 2. รายงานผลงานเก่า & เรียกดูย้อนหลัง (Historical Work Report)
+    with tab_history:
+        st.subheader("📜 รายงานประวัติผลงานเก่าและงานที่สำเร็จย้อนหลัง")
+        st.caption("สามารถเลือกดูว่าพนักงานคนไหน สำเร็จงานอะไรไปแล้วบ้าง พร้อมรายละเอียดวันส่ง คะแนนประเมิน และแต้ม KPI ที่ได้")
+
+        # ฟิลเตอร์ค้นหาประวัติย้อนหลัง
+        c_h1, c_h2, c_h3 = st.columns(3)
+        with c_h1:
+            hist_emp = st.selectbox("👤 เลือกพนักงานที่ต้องการดูรายงาน:", ["ทุกคน (All Employees)"] + [op["username"] for op in operators], key="hist_emp")
+        with c_h2:
+            hist_status = st.selectbox("📌 สถานะผลงาน:", ["เฉพาะงานที่สำเร็จแล้ว (Done)", "งานทุกสถานะ"], key="hist_status")
+        with c_h3:
+            hist_type = st.selectbox("🏷️ ประเภทงาน:", ["ทั้งหมด", "Project", "Routine"], key="hist_type")
+
+        # ประมวลผลงานย้อนหลัง
+        report_df = tasks_df.copy() if not tasks_df.empty else pd.DataFrame()
+        if not report_df.empty:
+            if hist_status == "เฉพาะงานที่สำเร็จแล้ว (Done)":
+                report_df = report_df[report_df["status"] == "Done"]
+            if hist_emp != "ทุกคน (All Employees)":
+                report_df = report_df[report_df["assignee_name"].fillna("").str.contains(hist_emp)]
+            if hist_type != "ทั้งหมด":
+                report_df = report_df[report_df["task_type"] == hist_type]
+
+        if report_df.empty:
+            st.info("ไม่มีประวัติผลงานที่ตรงตามเงื่อนไขที่เลือก")
+        else:
+            # คำนวณแต้มและสถานะสำหรับแต่ละงาน
+            history_rows = []
+            for _, r in report_df.iterrows():
+                is_ot = r.get("is_ontime")
+                ot_text = "🟢 ตรงเวลา (+10)" if is_ot is True else ("🔴 ล่าช้า (-5)" if is_ot is False else "⚪ ปกติ")
+                rating = r.get("satisfaction_rating") or 0
+                rating_str = f"⭐ {rating}/5" if rating > 0 else "-"
                 
-                if st.form_submit_button("บันทึกการแก้ไขคะแนน"):
-                    clean_type = "ความดีความชอบ" if adj_pts >= 0 else "ความผิดพลาด"
-                    try:
-                        supabase.table("kpi_adjustments").insert({
-                            "username": target_emp,
-                            "points": adj_pts,
-                            "reason_type": clean_type,
-                            "description": reason_txt,
-                            "created_by": curr_user.get("username")
-                        }).execute()
-                        st.success(f"บันทึกการปรับคะแนน {adj_pts:+} ให้ @{target_emp} สำเร็จแล้ว!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"เกิดข้อผิดพลาด: {e}")
+                # แต้มคำนวณเฉพาะงานนี้
+                base_pt = 5 if r.get("status") == "Done" else 0
+                time_pt = 10 if is_ot is True else (-5 if is_ot is False else 0)
+                star_pt = rating * 4
+                task_kpi = base_pt + time_pt + star_pt
+
+                history_rows.append({
+                    "ชื่องาน": r.get("title"),
+                    "ผู้รับผิดชอบงาน": r.get("assignee_name") or "-",
+                    "ผู้สั่งการ": r.get("creator_username") or r.get("requester_name") or "-",
+                    "ประเภท": r.get("task_type"),
+                    "กำหนดส่ง": r.get("due_date") or "-",
+                    "วันที่ส่งงานจริง": str(r.get("completed_at") or "-")[:10],
+                    "ผลการส่ง": ot_text,
+                    "ความพึงพอใจ": rating_str,
+                    "แต้ม KPI งานนี้": f"+{task_kpi}" if task_kpi >= 0 else str(task_kpi),
+                    "สถานะปัจจุบัน": r.get("status"),
+                    "ลิงก์/ผลงานที่ส่ง": r.get("submission_note") or r.get("attachment_url") or "-"
+                })
+
+            history_display_df = pd.DataFrame(history_rows)
+            
+            # สรุปด้านบนตาราง
+            st.markdown(f"**พบรายการงานในรายงานทั้งหมด:** `{len(history_display_df)} งาน`")
+            st.dataframe(history_display_df, use_container_width=True, hide_index=True)
+
+            # ปุ่มดาวน์โหลด CSV
+            csv_data = history_display_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 ดาวน์โหลดรายงานนี้เป็นไฟล์ CSV (Excel)",
+                data=csv_data,
+                file_name=f"kpi_work_report_{datetime.today().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                type="primary"
+            )
 
 # --- Admin Panel: จัดการผู้ใช้งานและโครงสร้างฐานข้อมูล ---
 
@@ -990,16 +1175,20 @@ def show_admin_panel():
         st.error("⛔ หน้านี้สำหรับผู้ดูแลระบบ (Admin) เท่านั้น")
         return
 
-    st.header("🛡️ แผงควบคุมผู้ดูแลระบบ (Admin Panel)")
-    tab_pend, tab_users, tab_db = st.tabs([
+    st.markdown("""
+        <div style="margin-bottom: 1.5rem;">
+            <h2 style="color: #991b1b; font-weight: 700; margin-bottom: 0.2rem;">🛡️ แผงควบคุมผู้ดูแลระบบ (Admin Panel)</h2>
+            <p style="color: #64748b;">อนุมัติผู้ใช้งานใหม่, กำหนดยศพนักงาน, และตรวจสอบโครงสร้างฐานข้อมูล</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    tab_pend, tab_users = st.tabs([
         "⏳ คำขออนุมัติผู้ใช้ใหม่", 
-        "👥 จัดการผู้ใช้งานทั้งหมด & ให้ยศ", 
-        "🗄️ โครงสร้างฐานข้อมูล (SQL Migration)"
+        "👥 จัดการผู้ใช้งานทั้งหมด & ให้ยศ"
     ])
 
     all_users = fetch_all_users()
 
-    # 1. คำขออนุมัติผู้ใช้ใหม่
     with tab_pend:
         st.subheader("คำขอสมัครสมาชิกที่รอการอนุมัติ")
         pending_users = [u for u in all_users if u.get("is_approved") is False and u.get("role") != "Admin"]
@@ -1010,7 +1199,7 @@ def show_admin_panel():
             for pu in pending_users:
                 with st.container():
                     st.markdown(f"""
-                    <div class="kanban-card">
+                    <div class="stat-box">
                         <strong>ชื่อ-สกุล:</strong> {pu.get('fullname') or '-'}<br/>
                         <strong>Username:</strong> @{pu.get('username')}<br/>
                         <strong>Email:</strong> {pu.get('email') or '-'}<br/>
@@ -1040,7 +1229,6 @@ def show_admin_panel():
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"⚠️ บันทึกไม่สำเร็จ: {e}")
-                                st.info("💡 กรุณารันคำสั่ง SQL ใน Supabase SQL Editor เพื่อสร้างคอลัมน์ roles ก่อนครับ (ดูได้จากแท็บ 'โครงสร้างฐานข้อมูล')")
                         
                         if st.button("🗑️ ปฏิเสธ / ลบ", key=f"del_user_{pu['user_id']}", use_container_width=True):
                             supabase.table("app_users").delete().eq("user_id", pu["user_id"]).execute()
@@ -1048,7 +1236,6 @@ def show_admin_panel():
                             st.rerun()
                     st.divider()
 
-    # 2. จัดการผู้ใช้งานทั้งหมด & ให้ยศ
     with tab_users:
         st.subheader("รายชื่อผู้ใช้งานทั้งหมดในระบบ")
         for u in all_users:
@@ -1076,73 +1263,12 @@ def show_admin_panel():
                             st.rerun()
                         except Exception as e:
                             st.error(f"⚠️ บันทึกไม่สำเร็จ: {e}")
-                            st.info("💡 กรุณารันคำสั่ง SQL ใน Supabase SQL Editor เพื่อสร้างคอลัมน์ roles ก่อนครับ (ดูได้จากแท็บ 'โครงสร้างฐานข้อมูล')")
                 with b2:
                     if u.get("username") != "admin":
                         if st.button("ลบผู้ใช้นี้ออกจากระบบ", key=f"del_emp_{u['user_id']}"):
                             supabase.table("app_users").delete().eq("user_id", u["user_id"]).execute()
                             st.warning("ลบผู้ใช้สำเร็จ")
                             st.rerun()
-
-    # 3. โครงสร้างฐานข้อมูล
-    with tab_db:
-        st.subheader("คำสั่ง SQL สำหรับตั้งค่าโครงสร้างฐานข้อมูลใน Supabase")
-        st.info("💡 หากระบบมีปัญหาบันทึกข้อมูลไม่สำเร็จ สามารถก๊อปปี้คำสั่ง SQL ด้านล่างไปรันใน Supabase > SQL Editor ได้ทันที")
-        sql_content = """-- 1. อัปเดตตาราง app_users
-ALTER TABLE app_users 
-ADD COLUMN IF NOT EXISTS fullname TEXT,
-ADD COLUMN IF NOT EXISTS email TEXT,
-ADD COLUMN IF NOT EXISTS phone TEXT,
-ADD COLUMN IF NOT EXISTS roles TEXT DEFAULT 'ปฏิบัติงาน',
-ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT FALSE;
-
-UPDATE app_users 
-SET is_approved = TRUE, 
-    roles = 'ระดับสั่งการ, ปฏิบัติงาน',
-    fullname = 'ผู้ดูแลระบบ (Admin)'
-WHERE username = 'admin' OR role = 'Admin';
-
--- 2. อัปเดตตาราง tasks
-ALTER TABLE tasks 
-ADD COLUMN IF NOT EXISTS creator_username TEXT,
-ADD COLUMN IF NOT EXISTS assignees TEXT,
-ADD COLUMN IF NOT EXISTS handover_to TEXT,
-ADD COLUMN IF NOT EXISTS handover_reason TEXT,
-ADD COLUMN IF NOT EXISTS handover_status TEXT DEFAULT 'None',
-ADD COLUMN IF NOT EXISTS satisfaction_rating INT DEFAULT 0,
-ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS is_ontime BOOLEAN,
-ADD COLUMN IF NOT EXISTS submission_note TEXT;
-
--- 3. ตาราง kpi_adjustments
-CREATE TABLE IF NOT EXISTS kpi_adjustments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username TEXT NOT NULL,
-    points NUMERIC NOT NULL,
-    reason_type TEXT NOT NULL,
-    description TEXT,
-    created_by TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4. ตาราง task_logs
-CREATE TABLE IF NOT EXISTS task_logs (
-    log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id UUID,
-    action TEXT NOT NULL,
-    performed_by TEXT,
-    details TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE IF EXISTS kpi_adjustments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS task_logs DISABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE app_users TO anon, authenticated, service_role;
-GRANT ALL ON TABLE tasks TO anon, authenticated, service_role;
-GRANT ALL ON TABLE kpi_adjustments TO anon, authenticated, service_role;
-GRANT ALL ON TABLE task_logs TO anon, authenticated, service_role;
-"""
-        st.code(sql_content, language="sql")
 
 # --- Main Application Controller ---
 
@@ -1156,25 +1282,27 @@ else:
     is_admin = curr_user.get("role") == "Admin" or curr_username == "admin"
     
     # Sidebar
-    st.sidebar.markdown(f"### 👤 ยินดีต้อนรับ: **{curr_fullname}**")
-    st.sidebar.caption(f"Username: @{curr_username}")
+    st.sidebar.markdown(f"""
+        <div style="background:#fff5f5; border:1px solid #fee2e2; border-radius:12px; padding:14px; margin-bottom:12px;">
+            <h4 style="margin:0; color:#991b1b;">👤 {curr_fullname}</h4>
+            <small style="color:#64748b;">@{curr_username}</small>
+        </div>
+    """, unsafe_allow_html=True)
     
-    # แสดง Badge ยศ
     badge_html = ""
     if is_admin:
-        badge_html += '<span class="badge-role-admin">🛡️ ผู้ดูแลระบบ</span> '
+        badge_html += '<span class="badge-pill badge-red">🛡️ Admin</span> '
     for r in curr_roles:
         if r == "ระดับสั่งการ":
-            badge_html += '<span class="badge-role-commander">👑 ระดับสั่งการ</span> '
+            badge_html += '<span class="badge-pill badge-gold">👑 สั่งการ</span> '
         elif r == "ปฏิบัติงาน":
-            badge_html += '<span class="badge-role-operator">🛠️ ปฏิบัติงาน</span> '
+            badge_html += '<span class="badge-pill badge-green">🛠️ ปฏิบัติงาน</span> '
     st.sidebar.markdown(badge_html, unsafe_allow_html=True)
     st.sidebar.markdown("---")
     
-    # ตรวจสอบสิทธิ์ระดับสั่งการ
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
     
-    # เมนูการใช้งาน เรียงลำดับ 1, 2, 3 และ Admin
+    # ลำดับเมนูที่จัดเรียงถูกต้อง 1, 2, 3 และ Admin
     menu_options = [
         "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)",
         "โมดูลที่ 2: กระดานงาน (Kanban Board)", 
@@ -1183,7 +1311,6 @@ else:
     if is_admin:
         menu_options.append("⚙️ ผู้ดูแลระบบ (Admin Panel)")
 
-    # ตั้งค่าหน้าเริ่มต้น: ถ้าระดับสั่งการให้เริ่มโมดูล 1, ถ้าปฏิบัติงานให้เริ่มโมดูล 2
     default_idx = 0 if is_commander else 1
     page = st.sidebar.radio("📌 เลือกเมนูระบบ", menu_options, index=default_idx)
     
