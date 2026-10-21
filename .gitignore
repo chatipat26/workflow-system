@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Streamlit secrets (Do not commit sensitive keys to public git)
+# .streamlit/secrets.toml
+
+# Environment variables
+.env
+.env.local
