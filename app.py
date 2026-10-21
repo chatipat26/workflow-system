@@ -1031,12 +1031,16 @@ def show_admin_panel():
                         st.write("")
                         if st.button("✅ อนุมัติและเปิดใช้งาน", key=f"appr_btn_{pu['user_id']}", use_container_width=True, type="primary"):
                             roles_str = ", ".join(new_roles) if new_roles else "ปฏิบัติงาน"
-                            supabase.table("app_users").update({
-                                "is_approved": True,
-                                "roles": roles_str
-                            }).eq("user_id", pu["user_id"]).execute()
-                            st.success(f"อนุมัติ @{pu.get('username')} เรียบร้อยแล้ว!")
-                            st.rerun()
+                            try:
+                                supabase.table("app_users").update({
+                                    "is_approved": True,
+                                    "roles": roles_str
+                                }).eq("user_id", pu["user_id"]).execute()
+                                st.success(f"อนุมัติ @{pu.get('username')} เรียบร้อยแล้ว!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"⚠️ บันทึกไม่สำเร็จ: {e}")
+                                st.info("💡 กรุณารันคำสั่ง SQL ใน Supabase SQL Editor เพื่อสร้างคอลัมน์ roles ก่อนครับ (ดูได้จากแท็บ 'โครงสร้างฐานข้อมูล')")
                         
                         if st.button("🗑️ ปฏิเสธ / ลบ", key=f"del_user_{pu['user_id']}", use_container_width=True):
                             supabase.table("app_users").delete().eq("user_id", pu["user_id"]).execute()
@@ -1064,11 +1068,15 @@ def show_admin_panel():
                 b1, b2 = st.columns(2)
                 with b1:
                     if st.button("บันทึกการแก้ไขยศ", key=f"save_roles_{u['user_id']}"):
-                        supabase.table("app_users").update({
-                            "roles": ", ".join(edit_roles)
-                        }).eq("user_id", u["user_id"]).execute()
-                        st.success("บันทึกยศสำเร็จ!")
-                        st.rerun()
+                        try:
+                            supabase.table("app_users").update({
+                                "roles": ", ".join(edit_roles)
+                            }).eq("user_id", u["user_id"]).execute()
+                            st.success("บันทึกยศสำเร็จ!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"⚠️ บันทึกไม่สำเร็จ: {e}")
+                            st.info("💡 กรุณารันคำสั่ง SQL ใน Supabase SQL Editor เพื่อสร้างคอลัมน์ roles ก่อนครับ (ดูได้จากแท็บ 'โครงสร้างฐานข้อมูล')")
                 with b2:
                     if u.get("username") != "admin":
                         if st.button("ลบผู้ใช้นี้ออกจากระบบ", key=f"del_emp_{u['user_id']}"):
