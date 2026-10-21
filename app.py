@@ -997,7 +997,7 @@ def render_task_board(curr_user, curr_username, is_commander):
             handover_tag = '<span class="badge-status" style="background:#ffedd5; color:#c2410c;">🔄 รออนุมัติส่งต่อ</span>' if row.get("handover_status") == "Pending" else ""
 
             with st.container(border=True):
-                col_info, col_act = st.columns([3.1, 1.9])
+                col_info, col_act = st.columns([4.4, 1.1])
                 with col_info:
                     st.markdown(f"""
                         <div style="font-size: 1.05rem; font-weight: 700; color: #1e293b;">
@@ -1014,30 +1014,84 @@ def render_task_board(curr_user, curr_username, is_commander):
                     """, unsafe_allow_html=True)
                 
                 with col_act:
-                    c_act1, c_act2 = st.columns([1.1, 1])
-                    with c_act1:
-                        if st.button("📝 ความคืบหน้า", key=f"prog_{row['task_id']}", use_container_width=True):
-                            show_task_progress_dialog(row.to_dict(), curr_user)
-                    with c_act2:
-                        with st.popover("⚙️ จัดการ", use_container_width=True):
-                            st.markdown(f"**ชื่องาน:** {row.get('title')}")
-                            if st.button("📝 เปิดดูความคืบหน้า / สรุปงาน", key=f"pop_prog_{row['task_id']}", use_container_width=True):
-                                show_task_progress_dialog(row.to_dict(), curr_user)
-                            st.caption(f"รายละเอียด: {row.get('description') or 'ไม่มีรายละเอียด'}")
-                            if row.get("attachment_url"):
-                                st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
+                    with st.popover("⚙️ จัดการงาน", use_container_width=True):
+                        st.markdown(f"**ชื่องาน:** {row.get('title')}")
+                        st.caption(f"รายละเอียด: {row.get('description') or 'ไม่มีรายละเอียด'}")
+                        if row.get("attachment_url"):
+                            st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
 
                         st.divider()
 
+                        # 1. ปุ่มเปิดดูความคืบหน้า & สรุปผลงาน
+                        if st.button("📝 รายงานความคืบหน้า & สรุปผลงาน", key=f"pop_prog_{row['task_id']}", use_container_width=True):
+                            show_task_progress_dialog(row.to_dict(), curr_user)
+
+                        # 2. ส่วนส่งต่องานระหว่างพนักงาน (ยศปฏิบัติงาน)
+                        if status != 'Done':
+                            st.divider()
+                            if row.get("handover_status") == "Pending":
+                                st.info(f"⏳ **สถานะ:** อยู่ระหว่างรอผู้มอบหมายอนุมัติส่งต่องานให้ **@{row.get('handover_to')}**")
+                                if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                                    c_ap1, c_ap2 = st.columns(2)
+                                    with c_ap1:
+                                        if st.button("✅ อนุมัติส่งต่อ", key=f"pop_ap_ho_{row['task_id']}", use_container_width=True, type="primary"):
+                                            new_assignee = row.get("handover_to")
+                                            supabase.table("tasks").update({
+                                                "assignee_name": new_assignee,
+                                                "assignees": new_assignee,
+                                                "handover_status": "Approved"
+                                            }).eq("task_id", row["task_id"]).execute()
+                                            log_task_action(row["task_id"], "อนุมัติส่งต่องาน", curr_username, f"อนุมัติส่งต่อให้ {new_assignee}")
+                                            clear_all_cache()
+                                            st.success(f"อนุมัติส่งต่องานให้ @{new_assignee} แล้ว!")
+                                            st.rerun()
+                                    with c_ap2:
+                                        if st.button("❌ ปฏิเสธ", key=f"pop_rj_ho_{row['task_id']}", use_container_width=True):
+                                            supabase.table("tasks").update({"handover_status": "Rejected"}).eq("task_id", row["task_id"]).execute()
+                                            log_task_action(row["task_id"], "ปฏิเสธการส่งต่องาน", curr_username, "ปฏิเสธคำขอ")
+                                            clear_all_cache()
+                                            st.rerun()
+                                else:
+                                    if st.button("❌ ยกเลิกคำขอส่งต่อ", key=f"pop_cn_ho_{row['task_id']}", use_container_width=True):
+                                        supabase.table("tasks").update({"handover_status": "None", "handover_to": None, "handover_reason": None}).eq("task_id", row["task_id"]).execute()
+                                        clear_all_cache()
+                                        st.rerun()
+                            else:
+                                with st.expander("🤝 ส่งต่องานให้เพื่อนร่วมงาน (ยศปฏิบัติงาน)"):
+                                    st.caption("เลือกเพื่อนร่วมงานที่ต้องการส่งต่องานให้ และระบุเหตุผลเพื่อรอผู้มอบหมายอนุมัติ")
+                                    colleague_ops = [op["username"] for op in operators if op["username"] != curr_username]
+                                    if not colleague_ops:
+                                        st.caption("ไม่มีรายชื่อเพื่อนร่วมงานอื่นในระบบ")
+                                    else:
+                                        to_op = st.selectbox("เลือกผู้รับมอบหมายต่อ:", colleague_ops, key=f"ho_{row['task_id']}")
+                                        ho_r = st.text_input("เหตุผลการส่งต่องาน *:", key=f"hr_{row['task_id']}")
+                                        if st.button("📤 ยืนยันส่งต่องาน (รออนุมัติ)", key=f"hbtn_{row['task_id']}", use_container_width=True, type="primary"):
+                                            if not ho_r.strip():
+                                                st.error("กรุณาระบุเหตุผลการส่งต่องาน")
+                                            else:
+                                                supabase.table("tasks").update({
+                                                    "handover_to": to_op,
+                                                    "handover_reason": ho_r.strip(),
+                                                    "handover_status": "Pending"
+                                                }).eq("task_id", row["task_id"]).execute()
+                                                log_task_action(row["task_id"], "ขอส่งต่องาน", curr_username, f"ขอส่งต่อให้ @{to_op} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
+                                                clear_all_cache()
+                                                st.success("✅ ส่งคำขอส่งต่องานแล้ว! กำลังรอผู้มอบหมายอนุมัติ")
+                                                st.rerun()
+
+                        # 3. ปุ่มดำเนินงานของผู้ปฏิบัติงาน
                         if status in ['To Do', 'Revision']:
-                            if st.button("🚀 เริ่มงาน (In Progress)", key=f"btn_st_{row['task_id']}", use_container_width=True, type="primary"):
+                            st.divider()
+                            if st.button("🚀 เริ่มดำเนินงาน (In Progress)", key=f"btn_st_{row['task_id']}", use_container_width=True, type="primary"):
                                 supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", row["task_id"]).execute()
                                 log_task_action(row["task_id"], "เริ่มดำเนินงาน", curr_username, "ย้ายไป In Progress")
                                 clear_all_cache()
                                 st.rerun()
 
                         if status == 'In Progress':
-                            s_note = st.text_input("ลิงก์ส่งงาน / หมายเหตุ:", key=f"nt_{row['task_id']}")
+                            st.divider()
+                            st.caption("📤 **ส่งงานเพื่อรอผู้มอบหมายตรวจรับ:**")
+                            s_note = st.text_input("ลิงก์ส่งงาน / หมายเหตุสรุปผลงาน:", key=f"nt_{row['task_id']}")
                             if st.button("✅ ส่งงานเพื่อรออนุมัติ", key=f"sub_{row['task_id']}", use_container_width=True, type="primary"):
                                 is_ot = True
                                 if row.get("due_date"):
@@ -1052,25 +1106,12 @@ def render_task_board(curr_user, curr_username, is_commander):
                                     "completed_at": datetime.now().isoformat(),
                                     "is_ontime": is_ot
                                 }).eq("task_id", row["task_id"]).execute()
+                                log_task_action(row["task_id"], "ส่งงานเพื่อรออนุมัติ", curr_username, f"หมายเหตุ: {s_note}")
                                 clear_all_cache()
-                                st.success("ส่งงานสำเร็จ!")
+                                st.success("ส่งงานสำเร็จ! งานย้ายไป In Review แล้ว")
                                 st.rerun()
 
-                        if status not in ['Done', 'In Review']:
-                            st.caption("🤝 **ขอส่งต่องานให้เพื่อนร่วมงาน:**")
-                            to_op = st.selectbox("เลือกผู้รับต่อ:", [op["username"] for op in operators if op["username"] != curr_username], key=f"ho_{row['task_id']}")
-                            ho_r = st.text_input("เหตุผลการส่งต่อ:", key=f"hr_{row['task_id']}")
-                            if st.button("ยืนยันส่งต่อ", key=f"hbtn_{row['task_id']}", use_container_width=True):
-                                if ho_r:
-                                    supabase.table("tasks").update({
-                                        "handover_to": to_op,
-                                        "handover_reason": ho_r,
-                                        "handover_status": "Pending"
-                                    }).eq("task_id", row["task_id"]).execute()
-                                    clear_all_cache()
-                                    st.success("ส่งคำขอแล้ว!")
-                                    st.rerun()
-
+                        # 4. ปุ่มสำหรับผู้สั่งการ (ตรวจรับ / ย้ายสถานะ)
                         if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
                             st.divider()
                             st.caption("👑 **สิทธิ์ผู้สั่งการ: ตรวจรับและย้ายสถานะงาน**")
@@ -1092,7 +1133,7 @@ def render_task_board(curr_user, curr_username, is_commander):
                                     clear_all_cache()
                                     st.rerun()
 
-                        # ปุ่มลบงาน (Delete Task) อนุญาตให้ Admin, ผู้สั่งการ, ผู้สร้างงาน หรือผู้รับผิดชอบงานลบได้หากสร้างผิดพลาด
+                        # 5. ปุ่มลบงาน (Delete Task)
                         can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
                         if can_del:
                             st.divider()
@@ -1115,42 +1156,83 @@ def render_task_board(curr_user, curr_username, is_commander):
                     with st.container(border=True):
                         st.markdown(f"**{row.get('title')}**")
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
+                        if row.get("handover_status") == "Pending":
+                            st.markdown(f'<span class="badge-status" style="background:#ffedd5; color:#c2410c; font-weight:700;">🔄 รออนุมัติส่งต่อ (@{row.get("handover_to")})</span>', unsafe_allow_html=True)
                         
-                        # ปุ่มดูความคืบหน้า
-                        if st.button("📝 ความคืบหน้า", key=f"k_prog_{row['task_id']}", use_container_width=True):
-                            show_task_progress_dialog(row.to_dict(), curr_user)
-                        
-                        # ปุ่มตรวจรับงานและย้ายสถานะสำหรับระดับสั่งการ
-                        if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
-                            if status == "In Review":
-                                st.markdown("---")
-                                st.caption("👑 **ตรวจรับงาน / ย้ายสถานะ:**")
-                                if st.button("🏆 ตรวจรับผ่าน ➡️ Done", key=f"k_done_{row['task_id']}", type="primary", use_container_width=True):
-                                    show_approve_done_dialog(row.to_dict(), curr_user)
-                                if st.button("↩️ ส่งกลับ ➡️ In Progress / แก้ไข", key=f"k_ret_{row['task_id']}", use_container_width=True):
-                                    show_return_task_dialog(row.to_dict(), curr_user)
-                            else:
-                                with st.popover("🔄 ย้ายสถานะงาน"):
-                                    all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
-                                    target_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"k_sel_{row['task_id']}")
-                                    if st.button("ยืนยันย้าย", key=f"k_btn_mv_{row['task_id']}", use_container_width=True, type="primary"):
-                                        if target_s in ["In Progress", "Revision"] and status == "In Review":
-                                            show_return_task_dialog(row.to_dict(), curr_user)
-                                        elif target_s == "Done":
-                                            show_approve_done_dialog(row.to_dict(), curr_user)
-                                        else:
-                                            supabase.table("tasks").update({"status": target_s}).eq("task_id", row["task_id"]).execute()
-                                            log_task_action(row["task_id"], "ย้ายสถานะ", curr_username, f"ย้ายไป {target_s}")
-                                            clear_all_cache()
-                                            st.rerun()
+                        with st.popover("⚙️ จัดการ / ความคืบหน้า", use_container_width=True):
+                            st.markdown(f"**ชื่องาน:** {row.get('title')}")
+                            if st.button("📝 รายงานความคืบหน้า & สรุปผลงาน", key=f"k_pop_prg_{row['task_id']}", use_container_width=True):
+                                show_task_progress_dialog(row.to_dict(), curr_user)
+                            
+                            # ส่งต่องานระหว่างพนักงาน
+                            if status != 'Done':
+                                st.divider()
+                                if row.get("handover_status") == "Pending":
+                                    st.info(f"⏳ **รออนุมัติส่งต่อให้:** @{row.get('handover_to')}")
+                                    if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                                        ck_ap1, ck_ap2 = st.columns(2)
+                                        with ck_ap1:
+                                            if st.button("✅ อนุมัติ", key=f"k_ap_{row['task_id']}", use_container_width=True, type="primary"):
+                                                new_assignee = row.get("handover_to")
+                                                supabase.table("tasks").update({
+                                                    "assignee_name": new_assignee,
+                                                    "assignees": new_assignee,
+                                                    "handover_status": "Approved"
+                                                }).eq("task_id", row["task_id"]).execute()
+                                                log_task_action(row["task_id"], "อนุมัติส่งต่องาน", curr_username, f"ส่งต่อให้ {new_assignee}")
+                                                clear_all_cache()
+                                                st.rerun()
+                                        with ck_ap2:
+                                            if st.button("❌ ปฏิเสธ", key=f"k_rj_{row['task_id']}", use_container_width=True):
+                                                supabase.table("tasks").update({"handover_status": "Rejected"}).eq("task_id", row["task_id"]).execute()
+                                                clear_all_cache()
+                                                st.rerun()
+                                else:
+                                    with st.expander("🤝 ส่งต่องานให้เพื่อนร่วมงาน (ยศปฏิบัติงาน)"):
+                                        colleague_ops_k = [op["username"] for op in operators if op["username"] != curr_username]
+                                        if colleague_ops_k:
+                                            to_op_k = st.selectbox("เลือกผู้รับมอบหมายต่อ:", colleague_ops_k, key=f"k_ho_{row['task_id']}")
+                                            ho_r_k = st.text_input("เหตุผลการส่งต่องาน *:", key=f"k_hr_{row['task_id']}")
+                                            if st.button("📤 ยืนยันส่งต่องาน", key=f"k_hbtn_{row['task_id']}", use_container_width=True, type="primary"):
+                                                if ho_r_k.strip():
+                                                    supabase.table("tasks").update({
+                                                        "handover_to": to_op_k,
+                                                        "handover_reason": ho_r_k.strip(),
+                                                        "handover_status": "Pending"
+                                                    }).eq("task_id", row["task_id"]).execute()
+                                                    log_task_action(row["task_id"], "ขอส่งต่องาน", curr_username, f"ส่งต่อให้ @{to_op_k}")
+                                                    clear_all_cache()
+                                                    st.rerun()
 
-                        can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
-                        if can_del_k:
-                            with st.expander("⚙️ ลบงาน"):
-                                if st.button("🗑️ ยืนยันลบ", key=f"k_del_{row['task_id']}", type="primary", use_container_width=True):
-                                    if delete_task_record(row["task_id"], row.get("title", "")):
-                                        st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                            # ตรวจรับงานและย้ายสถานะสำหรับระดับสั่งการ
+                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                                st.divider()
+                                st.caption("👑 **ตรวจรับงาน / ย้ายสถานะ:**")
+                                if status == "In Review":
+                                    if st.button("🏆 ตรวจรับผ่าน ➡️ Done", key=f"k_done_{row['task_id']}", type="primary", use_container_width=True):
+                                        show_approve_done_dialog(row.to_dict(), curr_user)
+                                    if st.button("↩️ ส่งกลับ ➡️ In Progress / แก้ไข", key=f"k_ret_{row['task_id']}", use_container_width=True):
+                                        show_return_task_dialog(row.to_dict(), curr_user)
+                                all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
+                                target_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"k_sel_{row['task_id']}")
+                                if st.button("ยืนยันย้ายสถานะ", key=f"k_btn_mv_{row['task_id']}", use_container_width=True):
+                                    if target_s in ["In Progress", "Revision"] and status == "In Review":
+                                        show_return_task_dialog(row.to_dict(), curr_user)
+                                    elif target_s == "Done":
+                                        show_approve_done_dialog(row.to_dict(), curr_user)
+                                    else:
+                                        supabase.table("tasks").update({"status": target_s}).eq("task_id", row["task_id"]).execute()
+                                        clear_all_cache()
                                         st.rerun()
+
+                            can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
+                            if can_del_k:
+                                st.divider()
+                                with st.expander("🗑️ ลบงาน"):
+                                    if st.button("ยืนยันลบถาวร", key=f"k_del_{row['task_id']}", type="primary", use_container_width=True):
+                                        if delete_task_record(row["task_id"], row.get("title", "")):
+                                            st.success("ลบงานสำเร็จ!")
+                                            st.rerun()
 
 # --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานเก่าเรียกดูย้อนหลัง ---
 
