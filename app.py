@@ -236,6 +236,11 @@ KANBAN_DND_CSS = """
   color: #0f172a;
   border-color: #94a3b8;
 }
+.btn-action.act-edit:hover {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
 .btn-action.btn-del:hover {
   background: #fee2e2;
   color: #b91c1c;
@@ -441,6 +446,7 @@ export default function (component) {
                 📝 คืบหน้า
               </button>
               <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
+                ${task.canEdit ? `<button type="button" class="btn-action act-edit" data-id="${task.id}" title="แก้ไขข้อมูลงาน (สิทธิ์ผู้สั่งการ)">✏️</button>` : ''}
                 <button type="button" class="btn-action act-handover" data-id="${task.id}" title="ขอส่งต่องาน">
                   🤝 ส่งต่อ
                 </button>
@@ -545,6 +551,13 @@ export default function (component) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       setTriggerValue("open_dialog", { type: "progress", taskId: btn.dataset.id, ts: Date.now() });
+    });
+  });
+
+  board.querySelectorAll(".act-edit").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTriggerValue("open_dialog", { type: "edit_task", taskId: btn.dataset.id, ts: Date.now() });
     });
   });
 
@@ -1010,6 +1023,109 @@ def user_can_edit_task_progress(curr_user, task):
         return True
     return False
 
+@st.dialog("✏️ แก้ไขและปรับเปลี่ยนข้อมูลงาน", width="large")
+def show_edit_task_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    desc = task.get("description", "")
+    task_type = task.get("task_type", "Project")
+    priority = task.get("priority", "Normal")
+    due_date_raw = task.get("due_date")
+    status = task.get("status", "To Do")
+    assignee_name = task.get("assignee_name", "")
+    att_url = task.get("attachment_url")
+
+    operators = fetch_operators()
+    op_unames = [op["username"] for op in operators]
+    curr_ass_list = [n.strip() for n in str(assignee_name).split(",") if n.strip() in op_unames]
+
+    try:
+        def_due = pd.to_datetime(due_date_raw).date() if due_date_raw else datetime.today().date()
+    except Exception:
+        def_due = datetime.today().date()
+
+    st.markdown(f"#### ✏️ แก้ไขข้อมูลงาน: **{title}**")
+    st.caption(f"👑 ผู้มอบหมายเดิม: `@{task.get('creator_username') or '-'}` | 📌 สถานะปัจจุบัน: `{status}`")
+    st.divider()
+
+    with st.form(f"edit_task_form_{tid}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            new_title = st.text_input("ชื่องาน / หัวข้อโปรเจกต์ *", value=title)
+            type_opts = ["Project", "Routine"]
+            type_idx = type_opts.index(task_type) if task_type in type_opts else 0
+            new_type = st.selectbox("ประเภทงาน:", type_opts, index=type_idx)
+
+            prio_map = {"Normal": 0, "High": 1, "Urgent": 2, "ปกติ": 0, "ด่วน": 1, "ด่วนมาก": 2}
+            prio_idx = prio_map.get(priority, 0)
+            new_prio = st.selectbox("ระดับความเร่งด่วน:", ["Normal", "High", "Urgent"], index=prio_idx)
+
+        with c2:
+            new_due = st.date_input("กำหนดวันส่งงาน (Due Date) *", value=def_due)
+            new_assignees = st.multiselect(
+                "ระบุผู้ปฏิบัติงาน (เลือกได้มากกว่า 1 คน) *",
+                options=op_unames,
+                default=curr_ass_list,
+                placeholder="คลิกเลือกผู้ปฏิบัติงาน..."
+            )
+            raw_link_val = att_url if (att_url and not str(att_url).startswith("data:")) else ""
+            new_link = st.text_input("🔗 ลิงก์ไฟล์แนบ (Google Drive / Cloud Link):", value=raw_link_val)
+
+        new_desc = st.text_area("รายละเอียดขอบเขตงาน (Scope of Work) *", value=desc, height=100)
+
+        c_up1, c_up2 = st.columns(2)
+        with c_up1:
+            new_file = st.file_uploader("📎 เปลี่ยนไฟล์แนบเปิดงาน (รูปภาพหรือเอกสาร PDF):", type=["png", "jpg", "jpeg", "webp", "pdf"], key=f"edit_file_{tid}")
+        with c_up2:
+            st.caption("เอกสาร / ไฟล์แนบปัจจุบัน:")
+            if att_url:
+                render_attachment_preview(att_url, caption="ไฟล์แนบปัจจุบัน")
+            else:
+                st.write("- ไม่มีไฟล์แนบ -")
+
+        st.divider()
+        submitted = st.form_submit_button("💾 บันทึกการแก้ไขข้อมูลงาน", type="primary", use_container_width=True)
+
+        if submitted:
+            if not new_title.strip() or not new_desc.strip() or not new_assignees:
+                st.error("กรุณากรอกชื่องาน รายละเอียดขอบเขตงาน และเลือกผู้ปฏิบัติงานอย่างน้อย 1 คน")
+            else:
+                assigned_str = ", ".join(new_assignees)
+                fin_attach = att_url
+                if new_file:
+                    fin_attach = process_uploaded_image_file(new_file)
+                elif new_link and new_link.strip():
+                    fin_attach = new_link.strip()
+
+                try:
+                    upd_payload = {
+                        "title": new_title.strip(),
+                        "description": new_desc.strip(),
+                        "task_type": new_type,
+                        "priority": new_prio,
+                        "due_date": new_due.strftime("%Y-%m-%d"),
+                        "assignee_name": assigned_str,
+                        "assignees": assigned_str,
+                    }
+                    if fin_attach:
+                        upd_payload["attachment_url"] = fin_attach
+
+                    supabase.table("tasks").update(upd_payload).eq("task_id", tid).execute()
+                    log_task_action(
+                        tid,
+                        "แก้ไขข้อมูลงาน",
+                        curr_user.get("username"),
+                        f"แก้ไขรายละเอียดงานโดยผู้สั่งการ @{curr_user.get('username')}: ผู้รับผิดชอบ={assigned_str}, กำหนดส่ง={new_due.strftime('%Y-%m-%d')}"
+                    )
+                    clear_all_cache()
+                    st.success("✅ แก้ไขและปรับเปลี่ยนข้อมูลงานเรียบร้อยแล้ว!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาดในการแก้ไข: {e}")
+
+    if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_edit_{tid}", use_container_width=True):
+        st.rerun()
+
 @st.dialog("📝 บันทึกความคืบหน้า & สรุปผลงาน", width="large")
 def show_task_progress_dialog(task, curr_user):
     tid = task.get("task_id")
@@ -1022,6 +1138,7 @@ def show_task_progress_dialog(task, curr_user):
     attachment = task.get("attachment_url")
 
     can_edit = user_can_edit_task_progress(curr_user, task)
+    is_commander = user_has_role(curr_user, "ระดับสั่งการ") or (curr_user.get("role") == "Admin") or (curr_user.get("username") == "admin")
 
     # 1. กล่องสรุปภาพรวมของงาน
     with st.container(border=True):
@@ -1035,6 +1152,10 @@ def show_task_progress_dialog(task, curr_user):
             st.caption(f"**ขอบเขตงาน (Scope):** {desc}")
         if attachment:
             render_attachment_preview(attachment, caption="ไฟล์แนบเปิดงาน / เอกสารประกอบ")
+        if is_commander:
+            st.write("")
+            if st.button("✏️ แก้ไขข้อมูลและรายละเอียดงานนี้ (สิทธิ์ระดับสั่งการ)", key=f"dlg_edt_btn_{tid}", use_container_width=True):
+                show_edit_task_dialog(task, curr_user)
 
     st.markdown("---")
 
@@ -1781,51 +1902,68 @@ def show_module1_commander_page():
                         st.error(f"เกิดข้อผิดพลาด: {e}")
 
         st.markdown("---")
-        st.subheader("📋 รายการงานล่าสุดที่คุณสร้าง (ลบได้หากสร้างผิดพลาด)")
+        st.subheader("📋 จัดการและแก้ไขงานในระบบ (สำหรับผู้มียศสั่งการทุกคน)")
         all_t = fetch_tasks()
-        if not all_t.empty and "creator_username" in all_t.columns:
-            show_all_m1 = st.checkbox("🔍 แสดงงานทั้งหมดในระบบ (สำหรับผู้สั่งการ/Admin)", value=False, key="m1_show_all")
-            if curr_user.get("role") == "Admin" or show_all_m1:
-                recent_t = all_t.head(15)
-            else:
-                recent_t = all_t[all_t["creator_username"] == curr_user.get("username")].head(15)
+        if not all_t.empty:
+            m1_c1, m1_c2, m1_c3 = st.columns([1.5, 1.2, 1.2])
+            with m1_c1:
+                search_q = st.text_input("🔍 ค้นหาชื่องาน / รายละเอียด:", key="m1_search")
+            with m1_c2:
+                creators_in_db = sorted(list(set([str(c) for c in all_t["creator_username"].dropna().unique() if str(c).strip()])))
+                filt_creator = st.selectbox("👑 กรองผู้มอบหมายงาน:", ["ทั้งหมด (งานของทุกคน)"] + [f"@{c}" for c in creators_in_db], key="m1_creator_filt")
+            with m1_c3:
+                filt_status = st.selectbox("📌 สถานะงาน:", ["ทั้งหมด", "To Do", "In Progress", "In Review", "Revision", "Done"], key="m1_status_filt")
 
-            if not recent_t.empty:
-                for _, r in recent_t.iterrows():
+            display_t = all_t.copy()
+            if search_q.strip():
+                display_t = display_t[display_t["title"].fillna("").str.contains(search_q.strip(), case=False) | display_t["description"].fillna("").str.contains(search_q.strip(), case=False)]
+            if filt_creator != "ทั้งหมด (งานของทุกคน)":
+                target_cr = filt_creator.replace("@", "")
+                display_t = display_t[display_t["creator_username"] == target_cr]
+            if filt_status != "ทั้งหมด":
+                display_t = display_t[display_t["status"] == filt_status]
+
+            if not display_t.empty:
+                st.caption(f"แสดงผล **{len(display_t)}** รายการ (ผู้มียศสั่งการสามารถแก้ไขรายละเอียด ปรับเปลี่ยนผู้รับผิดชอบ หรือลบงานได้ทุกรายการ)")
+                for _, r in display_t.iterrows():
                     with st.container(border=True):
-                        c_inf, c_prg, c_del = st.columns([3.5, 1.2, 1.2])
+                        c_inf, c_edt, c_prg, c_del = st.columns([3.2, 1, 1, 1])
                         with c_inf:
-                            st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
-                            st.caption(f"ผู้สั่งการ: @{r.get('creator_username') or '-'} | กำหนดส่ง: {r.get('due_date') or '-'}")
+                            st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: **{r.get('assignee_name') or '-'}**")
+                            st.caption(f"👑 ผู้สั่งการ: @{r.get('creator_username') or '-'} | 📅 กำหนดส่ง: {r.get('due_date') or '-'} | 🏷️ ประเภท: {r.get('task_type') or 'Project'}")
+                        with c_edt:
+                            if st.button("✏️ แก้ไขงาน", key=f"m1_edt_{r['task_id']}", use_container_width=True):
+                                show_edit_task_dialog(r.to_dict(), curr_user)
                         with c_prg:
-                            if st.button("📝 ความคืบหน้า", key=f"m1_prg_{r['task_id']}", use_container_width=True):
+                            if st.button("📝 คืบหน้า", key=f"m1_prg_{r['task_id']}", use_container_width=True):
                                 show_task_progress_dialog(r.to_dict(), curr_user)
                         with c_del:
-                          with st.expander("🗑️ ลบงาน"):
-                            if st.button("ยืนยันลบ", key=f"m1_del_{r['task_id']}", type="primary", use_container_width=True):
-                                if delete_task_record(r["task_id"], r.get("title", "")):
-                                    st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
-                                    st.rerun()
+                            with st.expander("🗑️ ลบงาน"):
+                                if st.button("ยืนยันลบ", key=f"m1_del_{r['task_id']}", type="primary", use_container_width=True):
+                                    if delete_task_record(r["task_id"], r.get("title", "")):
+                                        st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                                        st.rerun()
             else:
-                st.caption("ยังไม่มีรายการงานที่คุณสร้าง")
+                st.info("ไม่พบรายการงานที่ตรงตามเงื่อนไขการค้นหา")
+        else:
+            st.caption("ยังไม่มีรายการงานในระบบ")
 
     with sub2:
         st.subheader("อนุมัติคำขอส่งต่องานระหว่างพนักงาน")
         tasks_df = fetch_tasks()
         if not tasks_df.empty and "handover_status" in tasks_df.columns:
             handovers = tasks_df[tasks_df["handover_status"] == "Pending"]
-            if curr_user.get("role") != "Admin" and "creator_username" in handovers.columns:
-                handovers = handovers[handovers["creator_username"] == curr_user.get("username")]
+            # ผู้มียศสั่งการทุกคนสามารถอนุมัติคำขอส่งต่องานได้ทุกงาน ไม่ว่าใครจะเป็นผู้มอบหมาย
 
             if handovers.empty:
                 st.info("ไม่มีรายการคำขอส่งต่องานค้างอยู่")
             else:
                 for _, row in handovers.iterrows():
                     with st.container(border=True):
-                        st.markdown(f"**งาน:** {row['title']} | **กำหนดส่ง:** {row.get('due_date') or '-'}")
+                        st.markdown(f"**งาน:** {row['title']} | 👑 **ผู้สั่งการเดิม:** @{row.get('creator_username') or '-'} | **กำหนดส่ง:** {row.get('due_date') or '-'}")
                         st.write(f"ผู้รับผิดชอบเดิม: `{row.get('assignee_name') or '-'}` ➡️ ปรับเปลี่ยนเป็น: `{row.get('handover_to') or '-'}`")
                         st.caption(f"เหตุผล: {row.get('handover_reason') or '-'}")
-                        c1, c2 = st.columns(2)
+                        c1, c2, c3 = st.columns([1.5, 1.5, 1.2])
                         with c1:
                             if st.button("✅ อนุมัติการปรับเปลี่ยน", key=f"ap_ho_{row['task_id']}", use_container_width=True, type="primary"):
                                 new_assignee = row.get("handover_to")
@@ -1834,14 +1972,18 @@ def show_module1_commander_page():
                                     "assignees": new_assignee,
                                     "handover_status": "Approved"
                                 }).eq("task_id", row["task_id"]).execute()
-                                log_task_action(row["task_id"], "อนุมัติเปลี่ยนผู้รับผิดชอบ", curr_user.get("username"), f"เปลี่ยนเป็น {new_assignee}")
+                                log_task_action(row["task_id"], "อนุมัติเปลี่ยนผู้รับผิดชอบ", curr_user.get("username"), f"อนุมัติเปลี่ยนเป็น {new_assignee} โดยผู้สั่งการ @{curr_user.get('username')}")
                                 clear_all_cache()
                                 st.rerun()
                         with c2:
                             if st.button("❌ ปฏิเสธ", key=f"rj_ho_{row['task_id']}", use_container_width=True):
                                 supabase.table("tasks").update({"handover_status": "Rejected"}).eq("task_id", row["task_id"]).execute()
+                                log_task_action(row["task_id"], "ปฏิเสธการส่งต่องาน", curr_user.get("username"), f"ปฏิเสธคำขอโดยผู้สั่งการ @{curr_user.get('username')}")
                                 clear_all_cache()
                                 st.rerun()
+                        with c3:
+                            if st.button("✏️ ปรับเปลี่ยนเอง", key=f"ho_cust_{row['task_id']}", use_container_width=True):
+                                show_handover_dialog(row.to_dict(), curr_user)
         else:
             st.info("ยังไม่มีข้อมูลคำขอส่งต่องาน")
 
@@ -1850,8 +1992,7 @@ def show_module1_commander_page():
         tasks_df = fetch_tasks()
         if not tasks_df.empty:
             reviews = tasks_df[tasks_df["status"] == "In Review"]
-            if curr_user.get("role") != "Admin" and "creator_username" in reviews.columns:
-                reviews = reviews[reviews["creator_username"] == curr_user.get("username")]
+            # ผู้มียศสั่งการทุกคนสามารถตรวจรับงานและประเมิน KPI ได้ทุกงาน ไม่ว่าใครจะเป็นผู้มอบหมาย
 
             if reviews.empty:
                 st.info("ไม่มีงานที่รอการตรวจรับในขณะนี้")
@@ -1859,7 +2000,7 @@ def show_module1_commander_page():
                 for _, row in reviews.iterrows():
                     with st.container(border=True):
                         ot_badge = "🟢 ส่งตรงเวลา" if row.get("is_ontime") is True else ("🔴 ส่งเกินกำหนด" if row.get("is_ontime") is False else "⚪ รอตรวจสอบวันส่ง")
-                        st.markdown(f"**ชื่องาน:** {row['title']} | {ot_badge}")
+                        st.markdown(f"**ชื่องาน:** {row['title']} | {ot_badge} | 👑 **ผู้สั่งการ:** @{row.get('creator_username') or '-'}")
                         
                         s_raw = row.get("submission_note") or ""
                         s_img = None
@@ -1877,7 +2018,7 @@ def show_module1_commander_page():
                         if s_img:
                             render_image_preview(s_img, caption="📸 ภาพผลงานที่ส่งตรวจรับ")
                         
-                        c_bt1, c_bt2, c_bt3 = st.columns([1.5, 1.5, 1])
+                        c_bt1, c_bt2, c_bt3, c_bt4 = st.columns([1.5, 1.5, 1, 1])
                         with c_bt1:
                             if st.button("🏆 ตรวจรับงานสำเร็จ (Done)", key=f"dn_{row['task_id']}", use_container_width=True, type="primary"):
                                 show_approve_done_dialog(row.to_dict(), curr_user)
@@ -1887,6 +2028,9 @@ def show_module1_commander_page():
                         with c_bt3:
                             if st.button("📝 ความคืบหน้า", key=f"m1_rev_prg_{row['task_id']}", use_container_width=True):
                                 show_task_progress_dialog(row.to_dict(), curr_user)
+                        with c_bt4:
+                            if st.button("✏️ แก้ไขงาน", key=f"m1_rev_edt_{row['task_id']}", use_container_width=True):
+                                show_edit_task_dialog(row.to_dict(), curr_user)
         else:
             st.info("ยังไม่มีข้อมูลงานในระบบ")
 
@@ -1994,6 +2138,7 @@ def render_task_board(curr_user, curr_username, is_commander):
                     pass
             
             can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
+            can_edit = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username)
             
             att_s = str(row.get("attachment_url") or "")
             sub_s = str(row.get("submission_note") or "")
@@ -2015,6 +2160,7 @@ def render_task_board(curr_user, curr_username, is_commander):
                 "handoverReason": str(row.get("handover_reason") or ""),
                 "description": str(row.get("description") or ""),
                 "canDelete": bool(can_del),
+                "canEdit": bool(can_edit),
                 "hasPdf": bool(has_pdf),
                 "hasImage": bool(has_img),
             })
@@ -2079,6 +2225,8 @@ def render_task_board(curr_user, curr_username, is_commander):
                         t_dict = t_rows.iloc[0].to_dict()
                         if dtype == "progress":
                             show_task_progress_dialog(t_dict, curr_user)
+                        elif dtype == "edit_task":
+                            show_edit_task_dialog(t_dict, curr_user)
                         elif dtype == "handover":
                             show_handover_dialog(t_dict, curr_user)
                         elif dtype == "delete":
@@ -2141,9 +2289,15 @@ def render_task_board(curr_user, curr_username, is_commander):
 
                         st.divider()
 
-                        # 1. ปุ่มเปิดดูความคืบหน้า & สรุปผลงาน
-                        if st.button("📝 รายงานความคืบหน้า & สรุปผลงาน", key=f"pop_prog_{row['task_id']}", use_container_width=True):
-                            show_task_progress_dialog(row.to_dict(), curr_user)
+                        # 1. ปุ่มเปิดดูความคืบหน้า & แก้ไขข้อมูลงาน
+                        c_prog1, c_prog2 = st.columns(2)
+                        with c_prog1:
+                            if st.button("📝 รายงานความคืบหน้า & สรุปผลงาน", key=f"pop_prog_{row['task_id']}", use_container_width=True):
+                                show_task_progress_dialog(row.to_dict(), curr_user)
+                        with c_prog2:
+                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin" or row.get("creator_username") == curr_username:
+                                if st.button("✏️ แก้ไขข้อมูลงาน", key=f"pop_edt_{row['task_id']}", use_container_width=True):
+                                    show_edit_task_dialog(row.to_dict(), curr_user)
 
                         # 2. ส่วนส่งต่องานระหว่างพนักงาน (ยศปฏิบัติงาน)
                         if status != 'Done':
