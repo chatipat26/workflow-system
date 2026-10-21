@@ -689,19 +689,25 @@ def delete_task_record(task_id, task_title=""):
         return False
 
 def parse_roles(roles_val):
-    if not roles_val:
+    if roles_val is None:
         return ["ปฏิบัติงาน"]
     if isinstance(roles_val, list):
-        return roles_val
-    return [r.strip() for r in str(roles_val).split(",") if r.strip()]
+        return [str(r).strip() for r in roles_val if str(r).strip()]
+    val_str = str(roles_val).strip()
+    if not val_str:
+        return []
+    return [r.strip() for r in val_str.split(",") if r.strip()]
 
 def user_has_role(user_dict, role_name):
     if not user_dict:
         return False
-    if user_dict.get("role") == "Admin" or user_dict.get("username") == "admin":
-        return True
     user_roles = parse_roles(user_dict.get("roles"))
-    return role_name in user_roles
+    if role_name in user_roles:
+        return True
+    # Admin มีสิทธิ์เทียบเท่า 'ระดับสั่งการ' เสมอ (แต่สำหรับยศ 'ปฏิบัติงาน' จะต้องถูกกำหนดใน roles เท่านั้น)
+    if (user_dict.get("role") == "Admin" or user_dict.get("username") == "admin") and role_name == "ระดับสั่งการ":
+        return True
+    return False
 
 @st.cache_data(ttl=180)
 def fetch_operators():
@@ -710,11 +716,12 @@ def fetch_operators():
     for u in users:
         is_approved = u.get("is_approved", True)
         roles = parse_roles(u.get("roles"))
-        if is_approved and ("ปฏิบัติงาน" in roles or u.get("role") == "Admin"):
+        if is_approved and "ปฏิบัติงาน" in roles:
             display_name = u.get("fullname") or u.get("username")
             operators.append({
                 "username": u.get("username"),
-                "display_name": f"{display_name} (@{u.get('username')})"
+                "display_name": f"{display_name} (@{u.get('username')})",
+                "fullname": display_name
             })
     return operators
 
@@ -2006,8 +2013,7 @@ def show_module3_kpi_dashboard():
     st.header("📊 โมดูลที่ 3: แดชบอร์ดคะแนน KPI & รายงานผลงาน")
     
     tasks_df = fetch_tasks()
-    all_users = fetch_all_users()
-    operators = [u for u in all_users if "ปฏิบัติงาน" in parse_roles(u.get("roles"))]
+    operators = fetch_operators()
     adjustments = fetch_kpi_adjustments()
 
     # การ์ดสรุปเมตริกเดิม 4 ตัว
@@ -2288,7 +2294,10 @@ def show_admin_panel():
                 b1, b2 = st.columns(2)
                 with b1:
                     if st.button("บันทึกการแก้ไขยศ", key=f"sv_{u['user_id']}"):
-                        supabase.table("app_users").update({"roles": ", ".join(edit_r)}).eq("user_id", u["user_id"]).execute()
+                        new_roles_str = ", ".join(edit_r)
+                        supabase.table("app_users").update({"roles": new_roles_str}).eq("user_id", u["user_id"]).execute()
+                        if st.session_state.user and (st.session_state.user.get("user_id") == u["user_id"] or st.session_state.user.get("username") == u.get("username")):
+                            st.session_state.user["roles"] = new_roles_str
                         clear_all_cache()
                         st.success("บันทึกยศสำเร็จ!")
                         st.rerun()
@@ -2304,6 +2313,12 @@ def show_admin_panel():
 if not st.session_state.logged_in:
     show_auth_page()
 else:
+    # ซิงค์ข้อมูลผู้ใช้ปัจจุบันกับฐานข้อมูลเสมอ เพื่อให้ยศและสิทธิ์เป็นปัจจุบันทันทีที่มีการแก้ไข
+    all_users_cache = fetch_all_users()
+    matched_u = next((u for u in all_users_cache if u.get("username") == st.session_state.user.get("username")), None)
+    if matched_u:
+        st.session_state.user = matched_u
+
     curr_user = st.session_state.user
     curr_username = curr_user.get("username")
     curr_fullname = curr_user.get("fullname") or curr_username
