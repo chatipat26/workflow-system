@@ -3,6 +3,7 @@ import base64
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import plotly.express as px
 from supabase import create_client, Client
 
 # --- Logo & Watermark Helper (Cached เพื่อความเร็ว) ---
@@ -74,23 +75,21 @@ st.markdown(f"""
     font-family: 'Sarabun', sans-serif;
     
     /* พื้นหลังหน้าจอหลักพร้อมลายน้ำ SVV (Watermark Background) */
+    [data-testid="stAppViewContainer"],
     .stApp {{
         background-color: #f8fafc !important;
         background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
         background-repeat: no-repeat !important;
-        background-position: center 42% !important;
-        background-size: min(760px, 92vw) auto !important;
+        background-position: center 36% !important;
+        background-size: min(700px, 90vw) auto !important;
         background-attachment: fixed !important;
     }}
 
-    [data-testid="stAppViewContainer"] {{
-        background-color: transparent !important;
-    }}
-
-    section.main,
+    [data-testid="stAppViewContainer"] > section.main,
     [data-testid="stMain"],
     [data-testid="stHeader"],
-    .main .block-container {{
+    .main .block-container,
+    div[data-testid="stAppViewBlockContainer"] {{
         background: transparent !important;
         background-color: transparent !important;
     }}
@@ -105,7 +104,7 @@ st.markdown(f"""
 
     /* การ์ดงานและแถบสีฟ้า SVV */
     .kanban-card {{
-        background-color: var(--background-color, #ffffff);
+        background-color: rgba(255, 255, 255, 0.90) !important;
         border: 1px solid #bae6fd;
         border-radius: 12px;
         padding: 16px;
@@ -146,12 +145,17 @@ st.markdown(f"""
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
     div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background-color: rgba(255, 255, 255, 0.88) !important;
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
+        background-color: rgba(255, 255, 255, 0.76) !important;
+        backdrop-filter: blur(6px) !important;
+        -webkit-backdrop-filter: blur(6px) !important;
         border: 1.5px solid #bae6fd !important;
         border-radius: 16px !important;
-        box-shadow: 0 10px 30px rgba(2, 132, 199, 0.10) !important;
+        box-shadow: 0 10px 30px rgba(2, 132, 199, 0.12) !important;
+    }}
+
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"] {{
+        background-color: rgba(255, 255, 255, 0.96) !important;
     }}
     </style>
 """, unsafe_allow_html=True)
