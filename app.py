@@ -69,6 +69,417 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Component CCv2: Drag and Drop Kanban Board ---
+KANBAN_DND_HTML = """
+<div id="kanban-wrapper" class="kanban-wrapper">
+  <div id="kanban-board" class="kanban-board"></div>
+</div>
+"""
+
+KANBAN_DND_CSS = """
+* {
+  box-sizing: border-box;
+}
+.kanban-wrapper {
+  width: 100%;
+  font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 4px 0 20px 0;
+}
+.kanban-board {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 6px 4px 16px 4px;
+  align-items: flex-start;
+}
+.kanban-col {
+  flex: 1 1 0;
+  min-width: 250px;
+  max-width: 320px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: all 0.2s ease;
+}
+.kanban-col-header {
+  padding: 12px 14px;
+  border-bottom: 2px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1e293b;
+  border-radius: 12px 12px 0 0;
+  background: #ffffff;
+}
+.kanban-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kanban-badge {
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.kanban-dropzone {
+  padding: 10px 8px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.15s ease;
+  border-radius: 0 0 12px 12px;
+}
+.kanban-dropzone.drag-over {
+  background: #e0f2fe !important;
+  outline: 2px dashed #0284c7;
+  outline-offset: -3px;
+}
+.kanban-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(2, 132, 199, 0.14);
+  border-color: #38bdf8;
+}
+.kanban-card:active {
+  cursor: grabbing;
+}
+.kanban-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.97);
+  border: 2px dashed #0284c7;
+}
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+.card-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #0f172a;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.card-type-tag {
+  font-size: 0.72rem;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #475569;
+  white-space: nowrap;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+}
+.card-meta {
+  font-size: 0.82rem;
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1.4;
+}
+.card-meta b {
+  color: #1e293b;
+}
+.card-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+.btn-action {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.btn-action:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+.btn-action.btn-del:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+.quick-move-sel {
+  font-size: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: #475569;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+.quick-move-sel:hover {
+  border-color: #0284c7;
+}
+.empty-col {
+  padding: 36px 12px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  margin: 8px 4px;
+  background: #ffffff50;
+  pointer-events: none;
+}
+"""
+
+KANBAN_DND_JS = """
+export default function (component) {
+  const { parentElement, data, setTriggerValue } = component;
+  if (!parentElement || !data) return;
+
+  const board = parentElement.querySelector("#kanban-board");
+  if (!board) return;
+
+  const columns = data.columns || [];
+  const tasks = data.tasks || [];
+
+  let html = "";
+  columns.forEach(col => {
+    const colTasks = tasks.filter(t => t.status === col.id);
+    html += `
+      <div class="kanban-col" data-col-id="${col.id}">
+        <div class="kanban-col-header" style="border-top: 3.5px solid ${col.color};">
+          <div class="kanban-col-title">
+            <span>${col.icon}</span>
+            <span>${col.title}</span>
+          </div>
+          <span class="kanban-badge" style="background:${col.color}18; color:${col.color};">${colTasks.length}</span>
+        </div>
+        <div class="kanban-dropzone" data-status="${col.id}">
+    `;
+    if (colTasks.length === 0) {
+      html += `
+        <div class="empty-col">
+          <div style="font-size:1.4rem; margin-bottom:4px; opacity:0.6;">📥</div>
+          <div>ไม่มีงานในสถานะนี้</div>
+          <div style="font-size:0.75rem; color:#94a3b8; margin-top:2px;">(ลากงานมาวางที่นี่ได้)</div>
+        </div>
+      `;
+    } else {
+      colTasks.forEach(task => {
+        let alertBadge = "";
+        if (task.isOverdue) {
+          alertBadge = `<span style="background:#fee2e2; color:#b91c1c; border-radius:4px; padding:1px 5px; font-size:0.73rem; font-weight:700; border:1px solid #fecaca;">🚨 เกินกำหนด</span>`;
+        }
+        let handoverBadge = "";
+        if (task.handoverStatus === "Pending") {
+          handoverBadge = `<span style="background:#ffedd5; color:#c2410c; border-radius:4px; padding:2px 6px; font-size:0.73rem; font-weight:700; border:1px solid #fed7aa; display:inline-block;">🔄 รออนุมัติส่งต่อให้ @${task.handoverTo || ''}</span>`;
+        }
+        
+        let priorityTag = "";
+        if (task.priority === "ด่วนมาก") {
+          priorityTag = `<span style="background:#fee2e2; color:#b91c1c; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px;">🔥 ด่วนมาก</span>`;
+        } else if (task.priority === "ด่วน") {
+          priorityTag = `<span style="background:#fef3c7; color:#b45309; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px;">⚡ ด่วน</span>`;
+        }
+
+        html += `
+          <div class="kanban-card" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}">
+            <div class="card-header-row">
+              <div class="card-title">${task.title}</div>
+              <div style="display:flex; gap:4px; align-items:center;">
+                ${priorityTag}
+                <span class="card-type-tag">${task.taskType || 'Project'}</span>
+              </div>
+            </div>
+            <div class="card-meta">
+              <div>👤 ผู้รับผิดชอบ: <b>${task.assignee || '-'}</b></div>
+              <div>👑 ผู้สั่งการ: <b>@${task.creator || '-'}</b></div>
+              <div>📅 กำหนดส่ง: <b>${task.dueDate || '-'}</b> ${alertBadge}</div>
+              ${handoverBadge ? `<div style="margin-top:2px;">${handoverBadge}</div>` : ''}
+            </div>
+            <div class="card-toolbar">
+              <button type="button" class="btn-action act-progress" data-id="${task.id}" title="บันทึกความคืบหน้า & สรุปผลงาน">
+                📝 คืบหน้า
+              </button>
+              <div style="display:flex; gap:4px; align-items:center;">
+                <button type="button" class="btn-action act-handover" data-id="${task.id}" title="ขอส่งต่องาน">
+                  🤝 ส่งต่อ
+                </button>
+                ${task.canDelete ? `<button type="button" class="btn-action btn-del act-delete" data-id="${task.id}" title="ลบงานนี้">🗑️</button>` : ''}
+                <select class="quick-move-sel" data-id="${task.id}" data-current="${task.status}" title="ย้ายสถานะ">
+                  <option value="" disabled selected>🔄</option>
+                  <option value="To Do">To Do</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="In Review">In Review</option>
+                  <option value="Revision">Revision</option>
+                  <option value="Done">Done</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+    html += `
+        </div>
+      </div>
+    `;
+  });
+
+  board.innerHTML = html;
+
+  // Setup HTML5 Drag and Drop
+  let draggedTaskId = null;
+  let draggedFromStatus = null;
+
+  const cards = board.querySelectorAll(".kanban-card");
+  cards.forEach(card => {
+    card.addEventListener("dragstart", (e) => {
+      draggedTaskId = card.dataset.taskId;
+      draggedFromStatus = card.dataset.currentStatus;
+      card.classList.add("dragging");
+      e.dataTransfer.setData("text/plain", draggedTaskId);
+      e.dataTransfer.setData("application/json", JSON.stringify({ taskId: draggedTaskId, fromStatus: draggedFromStatus }));
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      draggedTaskId = null;
+      draggedFromStatus = null;
+      board.querySelectorAll(".kanban-dropzone").forEach(dz => dz.classList.remove("drag-over"));
+    });
+
+    // Clicking card body opens progress
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button") || e.target.closest("select")) return;
+      const tid = card.dataset.taskId;
+      setTriggerValue("open_dialog", { type: "progress", taskId: tid, ts: Date.now() });
+    });
+  });
+
+  const dropzones = board.querySelectorAll(".kanban-dropzone");
+  dropzones.forEach(dz => {
+    dz.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      dz.classList.add("drag-over");
+    });
+
+    dz.addEventListener("dragleave", (e) => {
+      if (e.relatedTarget && dz.contains(e.relatedTarget)) return;
+      dz.classList.remove("drag-over");
+    });
+
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dz.classList.remove("drag-over");
+      const toStatus = dz.dataset.status;
+      
+      let tid = draggedTaskId;
+      let fromStatus = draggedFromStatus;
+      try {
+        const raw = e.dataTransfer.getData("application/json");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.taskId) tid = parsed.taskId;
+          if (parsed.fromStatus) fromStatus = parsed.fromStatus;
+        }
+      } catch (err) {}
+      if (!tid) tid = e.dataTransfer.getData("text/plain");
+
+      if (!tid) return;
+      if (fromStatus === toStatus) return;
+
+      setTriggerValue("task_moved", {
+        taskId: tid,
+        fromStatus: fromStatus,
+        toStatus: toStatus,
+        ts: Date.now()
+      });
+    });
+  });
+
+  // Action Buttons
+  board.querySelectorAll(".act-progress").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTriggerValue("open_dialog", { type: "progress", taskId: btn.dataset.id, ts: Date.now() });
+    });
+  });
+
+  board.querySelectorAll(".act-handover").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTriggerValue("open_dialog", { type: "handover", taskId: btn.dataset.id, ts: Date.now() });
+    });
+  });
+
+  board.querySelectorAll(".act-delete").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTriggerValue("open_dialog", { type: "delete", taskId: btn.dataset.id, ts: Date.now() });
+    });
+  });
+
+  // Quick move select
+  board.querySelectorAll(".quick-move-sel").forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const targetStatus = sel.value;
+      const tid = sel.dataset.id;
+      const currentStatus = sel.dataset.current;
+      if (targetStatus && targetStatus !== currentStatus) {
+        setTriggerValue("task_moved", {
+          taskId: tid,
+          fromStatus: currentStatus,
+          toStatus: targetStatus,
+          ts: Date.now()
+        });
+      }
+    });
+  });
+}
+"""
+
+_KANBAN_DND = st.components.v2.component(
+    "kanban_dnd_board",
+    html=KANBAN_DND_HTML,
+    css=KANBAN_DND_CSS,
+    js=KANBAN_DND_JS,
+)
+
 # Custom CSS: โทนสีฟ้าเข้ากับโลโก้ SVV (Royal & Sky Blue) สะอาดตา อ่านง่าย โหลดเร็ว
 st.markdown("""
     <style>
@@ -584,6 +995,130 @@ def show_approve_done_dialog(task, curr_user):
     if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_dn_{tid}", use_container_width=True):
         st.rerun()
 
+@st.dialog("📤 ส่งมอบงานเพื่อรอผู้มอบหมายตรวจรับ", width="medium")
+def show_submit_work_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    assignee = task.get("assignee_name", "-")
+    curr_due = task.get("due_date")
+    curr_username = curr_user.get("username")
+    
+    st.markdown(f"#### 📌 ส่งงาน: **{title}**")
+    st.caption(f"ผู้รับผิดชอบ: **{assignee}** | กำหนดส่ง: **{curr_due or '-'}**")
+    st.divider()
+    
+    with st.form(f"form_submit_{tid}"):
+        s_note = st.text_area("📝 สรุปผลงาน / ลิงก์ส่งมอบงาน *:", placeholder="ระบุรายละเอียดผลงาน ลิงก์เอกสาร หรือผลลัพธ์ที่ได้...")
+        submitted = st.form_submit_button("✅ ยืนยันส่งงาน (ย้ายไป In Review)", type="primary", use_container_width=True)
+        if submitted:
+            if not s_note.strip():
+                st.error("กรุณาระบุสรุปผลงานหรือลิงก์ส่งมอบงาน")
+            else:
+                is_ot = True
+                if curr_due:
+                    try:
+                        if datetime.today().date() > pd.to_datetime(curr_due).date():
+                            is_ot = False
+                    except Exception:
+                        pass
+                supabase.table("tasks").update({
+                    "status": "In Review",
+                    "submission_note": s_note.strip(),
+                    "completed_at": datetime.now().isoformat(),
+                    "is_ontime": is_ot
+                }).eq("task_id", tid).execute()
+                log_task_action(tid, "ส่งงานเพื่อรออนุมัติ", curr_username, f"หมายเหตุ: {s_note.strip()}")
+                clear_all_cache()
+                st.success("ส่งงานสำเร็จ! งานย้ายไป In Review เรียบร้อยแล้ว")
+                st.rerun()
+    if st.button("✖️ ปิดหน้าต่าง (ยกเลิก)", key=f"cls_sub_{tid}", use_container_width=True):
+        st.rerun()
+
+@st.dialog("🤝 ส่งต่องานให้เพื่อนร่วมงาน", width="medium")
+def show_handover_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    curr_assignee = task.get("assignee_name", "-")
+    ho_status = task.get("handover_status")
+    ho_to = task.get("handover_to")
+    ho_reason = task.get("handover_reason")
+    curr_username = curr_user.get("username")
+    is_commander = user_has_role(curr_user, "ระดับสั่งการ")
+    operators = fetch_operators()
+    
+    st.markdown(f"#### 📌 ชื่องาน: **{title}**")
+    st.caption(f"ผู้รับผิดชอบปัจจุบัน: **{curr_assignee}**")
+    st.divider()
+    
+    if ho_status == "Pending":
+        st.info(f"⏳ **สถานะ:** อยู่ระหว่างรอผู้มอบหมายอนุมัติส่งต่องานให้ **@{ho_to}**\n\nเหตุผล: *{ho_reason or '-'}*")
+        if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+            st.caption("👑 **สิทธิ์ผู้สั่งการ: พิจารณาอนุมัติคำขอส่งต่องาน**")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ อนุมัติส่งต่อ", key=f"dlg_ap_ho_{tid}", type="primary", use_container_width=True):
+                    supabase.table("tasks").update({
+                        "assignee_name": ho_to,
+                        "assignees": ho_to,
+                        "handover_status": "Approved"
+                    }).eq("task_id", tid).execute()
+                    log_task_action(tid, "อนุมัติส่งต่องาน", curr_username, f"อนุมัติส่งต่อให้ {ho_to}")
+                    clear_all_cache()
+                    st.success(f"อนุมัติส่งต่องานให้ @{ho_to} แล้ว!")
+                    st.rerun()
+            with c2:
+                if st.button("❌ ปฏิเสธ", key=f"dlg_rj_ho_{tid}", use_container_width=True):
+                    supabase.table("tasks").update({"handover_status": "Rejected"}).eq("task_id", tid).execute()
+                    log_task_action(tid, "ปฏิเสธการส่งต่องาน", curr_username, "ปฏิเสธคำขอ")
+                    clear_all_cache()
+                    st.rerun()
+        else:
+            if st.button("❌ ขอยกเลิกคำขอส่งต่อ", key=f"dlg_cn_ho_{tid}", use_container_width=True):
+                supabase.table("tasks").update({"handover_status": "None", "handover_to": None, "handover_reason": None}).eq("task_id", tid).execute()
+                log_task_action(tid, "ยกเลิกการส่งต่องาน", curr_username, "ยกเลิกคำขอ")
+                clear_all_cache()
+                st.rerun()
+    else:
+        colleague_ops = [op["username"] for op in operators if op["username"] != curr_username]
+        if not colleague_ops:
+            st.warning("ไม่พบรายชื่อเพื่อนร่วมงานอื่นในระบบ")
+        else:
+            with st.form(f"form_ho_{tid}"):
+                to_op = st.selectbox("เลือกเพื่อนร่วมงานที่จะรับมอบหมายต่อ:", colleague_ops)
+                ho_r = st.text_area("เหตุผลในการขอส่งต่องาน *:", placeholder="ระบุเหตุผล เช่น ติดภารกิจด่วน, ถ่ายทอดงานตามความเชี่ยวชาญ...")
+                submitted = st.form_submit_button("📤 ยืนยันการขอส่งต่องาน (รออนุมัติ)", type="primary", use_container_width=True)
+                if submitted:
+                    if not ho_r.strip():
+                        st.error("กรุณาระบุเหตุผลการส่งต่องาน")
+                    else:
+                        supabase.table("tasks").update({
+                            "handover_to": to_op,
+                            "handover_reason": ho_r.strip(),
+                            "handover_status": "Pending"
+                        }).eq("task_id", tid).execute()
+                        log_task_action(tid, "ขอส่งต่องาน", curr_username, f"ขอส่งต่อให้ @{to_op} (เหตุผล: {ho_r.strip()}) - รอผู้มอบหมายอนุมัติ")
+                        clear_all_cache()
+                        st.success("✅ ส่งคำขอส่งต่องานแล้ว! กำลังรอผู้มอบหมายอนุมัติ")
+                        st.rerun()
+    if st.button("✖️ ปิดหน้าต่าง", key=f"cls_ho_{tid}", use_container_width=True):
+        st.rerun()
+
+@st.dialog("🗑️ ยืนยันการลบงาน", width="small")
+def show_delete_task_dialog(task, curr_user):
+    tid = task.get("task_id")
+    title = task.get("title", "")
+    st.warning(f"คุณต้องการลบงาน: **{title}** หรือไม่?")
+    st.caption("⚠️ ระบบจะตัดยอดงานนี้ออกจากสถิติและลดคะแนน KPI ทันที (ใช้ในกรณีสร้างผิดพลาด / ไม่ได้ทำ)")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("❌ ยืนยันลบถาวร", key=f"dlg_del_confirm_{tid}", type="primary", use_container_width=True):
+            if delete_task_record(tid, title):
+                st.success("ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                st.rerun()
+    with c2:
+        if st.button("ยกเลิก", key=f"dlg_del_cancel_{tid}", use_container_width=True):
+            st.rerun()
+
 # --- Authentication & Registration Page (โลโก้กะทัดรัด & ลายน้ำ Watermark บนแบคกราว) ---
 
 def show_auth_page():
@@ -966,10 +1501,117 @@ def render_task_board(curr_user, curr_username, is_commander):
         return
 
     # มุมมองแสดงผล
-    view_style = st.radio("รูปแบบมุมมอง:", ["📄 แสดงเป็นบรรทัดกระชับ (Compact List - อ่านง่าย โหลดไว)", "📊 แสดงแยก 5 ช่องสถานะ (Kanban Columns)"], horizontal=True)
+    view_style = st.radio("รูปแบบมุมมอง:", ["📊 กระดานลากและวาง (Drag & Drop Kanban)", "📄 แสดงเป็นบรรทัดกระชับ (Compact List - อ่านง่าย โหลดไว)"], horizontal=True)
 
-    # 1. แสดงเป็นรายการทีละบรรทัด (โหลดไวมาก อ่านง่าย)
-    if "Compact List" in view_style:
+    # 1. แสดงเป็นกระดานลากและวาง (Drag & Drop Kanban Board)
+    if "Drag & Drop Kanban" in view_style:
+        columns_cfg = [
+            {"id": "To Do", "title": "To Do", "badge": "รอดำเนินการ", "color": "#64748b", "icon": "📋"},
+            {"id": "In Progress", "title": "In Progress", "badge": "กำลังดำเนินงาน", "color": "#0284c7", "icon": "⚡"},
+            {"id": "In Review", "title": "In Review", "badge": "รอตรวจรับ", "color": "#f59e0b", "icon": "🔍"},
+            {"id": "Revision", "title": "Revision", "badge": "ส่งกลับแก้ไข", "color": "#ef4444", "icon": "⚠️"},
+            {"id": "Done", "title": "Done", "badge": "เสร็จสิ้น", "color": "#10b981", "icon": "🏆"},
+        ]
+        
+        tasks_data = []
+        for _, row in filtered_df.iterrows():
+            status = row.get("status", "To Do")
+            due_str = row.get("due_date") or ""
+            is_overdue = False
+            if status != "Done" and row.get("due_date"):
+                try:
+                    diff = (pd.to_datetime(row["due_date"]).date() - datetime.today().date()).days
+                    if diff < 0:
+                        is_overdue = True
+                except Exception:
+                    pass
+            
+            can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
+            
+            tasks_data.append({
+                "id": str(row.get("task_id")),
+                "title": str(row.get("title") or "ไม่มีชื่อ"),
+                "status": status,
+                "assignee": str(row.get("assignee_name") or "-"),
+                "creator": str(row.get("creator_username") or "-"),
+                "dueDate": str(due_str),
+                "isOverdue": is_overdue,
+                "taskType": str(row.get("task_type") or "Project"),
+                "priority": str(row.get("priority") or "ปกติ"),
+                "handoverStatus": str(row.get("handover_status") or "None"),
+                "handoverTo": str(row.get("handover_to") or ""),
+                "handoverReason": str(row.get("handover_reason") or ""),
+                "description": str(row.get("description") or ""),
+                "canDelete": bool(can_del),
+            })
+            
+        st.caption("💡 **วิธีใช้งาน:** คลิกลากการ์ดงาน (Drag & Drop) ข้ามช่องเพื่อเปลี่ยนสถานะได้ทันที หรือกดปุ่ม 📝 คืบหน้า / 🤝 ส่งต่องาน บนการ์ด")
+
+        kanban_res = _KANBAN_DND(
+            key="kanban_dnd_main_board",
+            data={
+                "columns": columns_cfg,
+                "tasks": tasks_data,
+                "currentUser": curr_username,
+                "isCommander": is_commander
+            },
+            on_task_moved_change=lambda: None,
+            on_open_dialog_change=lambda: None,
+        )
+
+        if kanban_res:
+            move_evt = getattr(kanban_res, "task_moved", None)
+            if move_evt and isinstance(move_evt, dict):
+                tid = move_evt.get("taskId")
+                from_s = move_evt.get("fromStatus")
+                to_s = move_evt.get("toStatus")
+                if tid and from_s != to_s:
+                    t_rows = df[df["task_id"] == tid] if not df.empty and "task_id" in df.columns else pd.DataFrame()
+                    if not t_rows.empty:
+                        t_dict = t_rows.iloc[0].to_dict()
+                        if from_s == "In Review" and to_s in ["In Progress", "Revision"]:
+                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                                show_return_task_dialog(t_dict, curr_user)
+                            else:
+                                st.warning("⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถส่งกลับงานจาก In Review เพื่อแก้ไขได้")
+                        elif from_s == "In Review" and to_s == "Done":
+                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
+                                show_approve_done_dialog(t_dict, curr_user)
+                            else:
+                                st.warning("⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถตรวจรับงานและย้ายไป Done ได้")
+                        elif from_s == "In Progress" and to_s == "In Review":
+                            show_submit_work_dialog(t_dict, curr_user)
+                        elif from_s == "To Do" and to_s == "In Progress":
+                            supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", tid).execute()
+                            log_task_action(tid, "เริ่มดำเนินงาน", curr_username, "ลากการ์ดงานไป In Progress (Drag & Drop)")
+                            clear_all_cache()
+                            st.rerun()
+                        else:
+                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin" or t_dict.get("creator_username") == curr_username:
+                                supabase.table("tasks").update({"status": to_s}).eq("task_id", tid).execute()
+                                log_task_action(tid, "ย้ายสถานะงาน", curr_username, f"ลากการ์ดย้ายจาก {from_s} ไป {to_s} (Drag & Drop)")
+                                clear_all_cache()
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ คุณไม่มีสิทธิ์ย้ายสถานะงานนี้")
+
+            dlg_evt = getattr(kanban_res, "open_dialog", None)
+            if dlg_evt and isinstance(dlg_evt, dict):
+                dtype = dlg_evt.get("type")
+                dtid = dlg_evt.get("taskId")
+                if dtid:
+                    t_rows = df[df["task_id"] == dtid] if not df.empty and "task_id" in df.columns else pd.DataFrame()
+                    if not t_rows.empty:
+                        t_dict = t_rows.iloc[0].to_dict()
+                        if dtype == "progress":
+                            show_task_progress_dialog(t_dict, curr_user)
+                        elif dtype == "handover":
+                            show_handover_dialog(t_dict, curr_user)
+                        elif dtype == "delete":
+                            show_delete_task_dialog(t_dict, curr_user)
+
+    # 2. แสดงเป็นรายการทีละบรรทัด (Compact List)
+    else:
         total_matched = len(filtered_df)
         st.markdown(f"**พบรายการงานทั้งหมด:** `{total_matched} รายการ`")
 
@@ -1143,96 +1785,6 @@ def render_task_board(curr_user, curr_username, is_commander):
                                     if delete_task_record(row["task_id"], row.get("title", "")):
                                         st.success("✅ ลบงานเรียบร้อยแล้ว! ลดยอดจำนวนงานและคะแนน KPI ทันที")
                                         st.rerun()
-
-    # 2. แสดงแยก 5 ช่องสถานะ (Kanban Columns)
-    else:
-        statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
-        cols = st.columns(len(statuses))
-        for idx, status in enumerate(statuses):
-            with cols[idx]:
-                status_df = filtered_df[filtered_df['status'] == status] if 'status' in filtered_df.columns else pd.DataFrame()
-                st.markdown(f"#### {status} ({len(status_df)})")
-                for _, row in status_df.iterrows():
-                    with st.container(border=True):
-                        st.markdown(f"**{row.get('title')}**")
-                        st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
-                        if row.get("handover_status") == "Pending":
-                            st.markdown(f'<span class="badge-status" style="background:#ffedd5; color:#c2410c; font-weight:700;">🔄 รออนุมัติส่งต่อ (@{row.get("handover_to")})</span>', unsafe_allow_html=True)
-                        
-                        with st.popover("⚙️ จัดการ / ความคืบหน้า", use_container_width=True):
-                            st.markdown(f"**ชื่องาน:** {row.get('title')}")
-                            if st.button("📝 รายงานความคืบหน้า & สรุปผลงาน", key=f"k_pop_prg_{row['task_id']}", use_container_width=True):
-                                show_task_progress_dialog(row.to_dict(), curr_user)
-                            
-                            # ส่งต่องานระหว่างพนักงาน
-                            if status != 'Done':
-                                st.divider()
-                                if row.get("handover_status") == "Pending":
-                                    st.info(f"⏳ **รออนุมัติส่งต่อให้:** @{row.get('handover_to')}")
-                                    if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
-                                        ck_ap1, ck_ap2 = st.columns(2)
-                                        with ck_ap1:
-                                            if st.button("✅ อนุมัติ", key=f"k_ap_{row['task_id']}", use_container_width=True, type="primary"):
-                                                new_assignee = row.get("handover_to")
-                                                supabase.table("tasks").update({
-                                                    "assignee_name": new_assignee,
-                                                    "assignees": new_assignee,
-                                                    "handover_status": "Approved"
-                                                }).eq("task_id", row["task_id"]).execute()
-                                                log_task_action(row["task_id"], "อนุมัติส่งต่องาน", curr_username, f"ส่งต่อให้ {new_assignee}")
-                                                clear_all_cache()
-                                                st.rerun()
-                                        with ck_ap2:
-                                            if st.button("❌ ปฏิเสธ", key=f"k_rj_{row['task_id']}", use_container_width=True):
-                                                supabase.table("tasks").update({"handover_status": "Rejected"}).eq("task_id", row["task_id"]).execute()
-                                                clear_all_cache()
-                                                st.rerun()
-                                else:
-                                    with st.expander("🤝 ส่งต่องานให้เพื่อนร่วมงาน (ยศปฏิบัติงาน)"):
-                                        colleague_ops_k = [op["username"] for op in operators if op["username"] != curr_username]
-                                        if colleague_ops_k:
-                                            to_op_k = st.selectbox("เลือกผู้รับมอบหมายต่อ:", colleague_ops_k, key=f"k_ho_{row['task_id']}")
-                                            ho_r_k = st.text_input("เหตุผลการส่งต่องาน *:", key=f"k_hr_{row['task_id']}")
-                                            if st.button("📤 ยืนยันส่งต่องาน", key=f"k_hbtn_{row['task_id']}", use_container_width=True, type="primary"):
-                                                if ho_r_k.strip():
-                                                    supabase.table("tasks").update({
-                                                        "handover_to": to_op_k,
-                                                        "handover_reason": ho_r_k.strip(),
-                                                        "handover_status": "Pending"
-                                                    }).eq("task_id", row["task_id"]).execute()
-                                                    log_task_action(row["task_id"], "ขอส่งต่องาน", curr_username, f"ส่งต่อให้ @{to_op_k}")
-                                                    clear_all_cache()
-                                                    st.rerun()
-
-                            # ตรวจรับงานและย้ายสถานะสำหรับระดับสั่งการ
-                            if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
-                                st.divider()
-                                st.caption("👑 **ตรวจรับงาน / ย้ายสถานะ:**")
-                                if status == "In Review":
-                                    if st.button("🏆 ตรวจรับผ่าน ➡️ Done", key=f"k_done_{row['task_id']}", type="primary", use_container_width=True):
-                                        show_approve_done_dialog(row.to_dict(), curr_user)
-                                    if st.button("↩️ ส่งกลับ ➡️ In Progress / แก้ไข", key=f"k_ret_{row['task_id']}", use_container_width=True):
-                                        show_return_task_dialog(row.to_dict(), curr_user)
-                                all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
-                                target_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"k_sel_{row['task_id']}")
-                                if st.button("ยืนยันย้ายสถานะ", key=f"k_btn_mv_{row['task_id']}", use_container_width=True):
-                                    if target_s in ["In Progress", "Revision"] and status == "In Review":
-                                        show_return_task_dialog(row.to_dict(), curr_user)
-                                    elif target_s == "Done":
-                                        show_approve_done_dialog(row.to_dict(), curr_user)
-                                    else:
-                                        supabase.table("tasks").update({"status": target_s}).eq("task_id", row["task_id"]).execute()
-                                        clear_all_cache()
-                                        st.rerun()
-
-                            can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
-                            if can_del_k:
-                                st.divider()
-                                with st.expander("🗑️ ลบงาน"):
-                                    if st.button("ยืนยันลบถาวร", key=f"k_del_{row['task_id']}", type="primary", use_container_width=True):
-                                        if delete_task_record(row["task_id"], row.get("title", "")):
-                                            st.success("ลบงานสำเร็จ!")
-                                            st.rerun()
 
 # --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานเก่าเรียกดูย้อนหลัง ---
 
