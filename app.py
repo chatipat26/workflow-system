@@ -20,8 +20,8 @@ def get_file_base64(filepaths):
                     pass
     return ""
 
-LOGO_B64 = get_file_base64(["logo.jpg", "logo.png"])
-WATERMARK_B64 = get_file_base64(["watermark.png"]) or LOGO_B64
+LOGO_B64 = get_file_base64(["logo_thumb.jpg", "logo.jpg", "logo.png"])
+BG_WATERMARK_B64 = get_file_base64(["bg_watermark.png", "watermark.png"]) or LOGO_B64
 
 # --- Supabase Connection ---
 @st.cache_resource
@@ -60,6 +60,24 @@ st.markdown(f"""
     <style>
     font-family: 'Sarabun', sans-serif;
     
+    /* พื้นหลังหน้าจอหลักพร้อมลายน้ำ SVV (Watermark Background) */
+    [data-testid="stAppViewContainer"] {{
+        background-color: #f8fafc !important;
+        background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
+        background-repeat: no-repeat !important;
+        background-position: center 36% !important;
+        background-size: min(440px, 82vw) min(440px, 82vw) !important;
+        background-attachment: fixed !important;
+    }}
+
+    [data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    .main .block-container {{
+        background: transparent !important;
+    }}
+
     /* การ์ดงานและแถบสีฟ้า SVV */
     .kanban-card {{
         background-color: var(--background-color, #ffffff);
@@ -103,8 +121,8 @@ st.markdown(f"""
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
     div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background: rgba(255, 255, 255, 0.94) !important;
-        backdrop-filter: blur(6px) !important;
+        background: rgba(255, 255, 255, 0.90) !important;
+        backdrop-filter: blur(8px) !important;
         border: 1px solid #bae6fd !important;
         border-radius: 14px !important;
         box-shadow: 0 6px 20px rgba(2, 132, 199, 0.08) !important;
@@ -124,9 +142,9 @@ if "logged_in" not in st.session_state:
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# --- Cached Fast Database Functions ---
+# --- Cached Fast Database Functions (TTL 2-5 นาที ลดแลค ลดรอ) ---
 
-@st.cache_data(ttl=4)
+@st.cache_data(ttl=120)
 def fetch_tasks():
     try:
         res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
@@ -134,7 +152,7 @@ def fetch_tasks():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=300)
 def fetch_all_users():
     try:
         res = supabase.table("app_users").select("*").execute()
@@ -142,7 +160,7 @@ def fetch_all_users():
     except Exception:
         return []
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=120)
 def fetch_kpi_adjustments():
     try:
         res = supabase.table("kpi_adjustments").select("*").order("created_at", desc=True).execute()
@@ -168,6 +186,7 @@ def user_has_role(user_dict, role_name):
     user_roles = parse_roles(user_dict.get("roles"))
     return role_name in user_roles
 
+@st.cache_data(ttl=180)
 def fetch_operators():
     users = fetch_all_users()
     operators = []
@@ -193,46 +212,15 @@ def log_task_action(task_id, action, performed_by, details=""):
     except Exception:
         pass
 
-# --- Authentication & Registration Page (มีโลโก้ & ลายน้ำ Watermark & โทนสีฟ้า) ---
+# --- Authentication & Registration Page (โลโก้กะทัดรัด & ลายน้ำ Watermark บนแบคกราว) ---
 
 def show_auth_page():
-    # Watermark Overlay สำหรับหน้าออเต็น (Authentication Page)
-    if WATERMARK_B64:
-        st.markdown(f"""
-            <div style="
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: min(540px, 86vw);
-                height: min(540px, 86vw);
-                background-image: url('data:image/png;base64,{WATERMARK_B64}');
-                background-repeat: no-repeat;
-                background-position: center;
-                background-size: contain;
-                opacity: 0.16;
-                pointer-events: none;
-                z-index: 999;
-            "></div>
-        """, unsafe_allow_html=True)
-
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_file = None
-    for cand in ["logo.jpg", os.path.join(base_dir, "logo.jpg"), "logo.png"]:
-        if os.path.exists(cand):
-            logo_file = cand
-            break
-
-    # แสดงโลโก้ตรงกลาง
-    col1, col2, col3 = st.columns([1.6, 1, 1.6])
-    with col2:
-        if logo_file:
-            st.image(logo_file, use_container_width=True)
-    
-    st.markdown("""
-        <div style="text-align: center; margin-bottom: 1.5rem;">
-            <h2 style="color: #0369a1; font-weight: 800; margin: 4px 0; letter-spacing: 0.5px;">TEAM WORKFLOW SVV</h2>
-            <p style="color: #64748b; font-size: 0.95rem; font-weight: 500;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
+    # แสดงโลโก้ขนาดพอเหมาะ (115px) กึ่งกลางหน้าจอ พร้อมหัวเรื่อง
+    st.markdown(f"""
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 20px; margin-bottom: 16px;">
+            <img src="data:image/jpeg;base64,{LOGO_B64}" width="115" height="115" style="border-radius: 50%; box-shadow: 0 4px 18px rgba(2, 132, 199, 0.22); margin-bottom: 12px; object-fit: contain;" />
+            <h2 style="color: #0369a1; font-weight: 800; font-size: 1.55rem; margin: 0; letter-spacing: 0.5px;">TEAM WORKFLOW SVV</h2>
+            <p style="color: #64748b; font-size: 0.92rem; font-weight: 500; margin-top: 4px; margin-bottom: 0;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -539,7 +527,10 @@ def show_module2_kanban_page():
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
 
     st.header("📋 โมดูลที่ 2: กระดานงาน (Task Board)")
-    
+    render_task_board(curr_user, curr_username, is_commander)
+
+@st.fragment
+def render_task_board(curr_user, curr_username, is_commander):
     df = fetch_tasks()
 
     # --- ตัวกรองผู้รับผิดชอบ & วันที่กำหนดส่งจากปฏิทิน ---
@@ -579,7 +570,8 @@ def show_module2_kanban_page():
 
     # 1. แสดงเป็นรายการทีละบรรทัด (โหลดไวมาก อ่านง่าย)
     if "Compact List" in view_style:
-        st.markdown(f"**พบรายการงานทั้งหมด:** `{len(filtered_df)} รายการ`")
+        total_matched = len(filtered_df)
+        st.markdown(f"**พบรายการงานทั้งหมด:** `{total_matched} รายการ`")
 
         for _, row in filtered_df.iterrows():
             status = row.get("status", "To Do")
@@ -658,19 +650,19 @@ def show_module2_kanban_page():
                                 st.rerun()
 
                         if status not in ['Done', 'In Review']:
-                            with st.expander("🤝 ขอส่งงานต่อ"):
-                                to_op = st.selectbox("เลือกผู้รับต่อ:", [op["username"] for op in operators if op["username"] != curr_username], key=f"ho_{row['task_id']}")
-                                ho_r = st.text_input("เหตุผล:", key=f"hr_{row['task_id']}")
-                                if st.button("ยืนยันส่งต่อ", key=f"hbtn_{row['task_id']}", use_container_width=True):
-                                    if ho_r:
-                                        supabase.table("tasks").update({
-                                            "handover_to": to_op,
-                                            "handover_reason": ho_r,
-                                            "handover_status": "Pending"
-                                        }).eq("task_id", row["task_id"]).execute()
-                                        clear_all_cache()
-                                        st.success("ส่งคำขอแล้ว!")
-                                        st.rerun()
+                            st.caption("🤝 **ขอส่งต่องานให้เพื่อนร่วมงาน:**")
+                            to_op = st.selectbox("เลือกผู้รับต่อ:", [op["username"] for op in operators if op["username"] != curr_username], key=f"ho_{row['task_id']}")
+                            ho_r = st.text_input("เหตุผลการส่งต่อ:", key=f"hr_{row['task_id']}")
+                            if st.button("ยืนยันส่งต่อ", key=f"hbtn_{row['task_id']}", use_container_width=True):
+                                if ho_r:
+                                    supabase.table("tasks").update({
+                                        "handover_to": to_op,
+                                        "handover_reason": ho_r,
+                                        "handover_status": "Pending"
+                                    }).eq("task_id", row["task_id"]).execute()
+                                    clear_all_cache()
+                                    st.success("ส่งคำขอแล้ว!")
+                                    st.rerun()
 
                         if is_commander:
                             st.divider()
@@ -696,6 +688,56 @@ def show_module2_kanban_page():
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
 
 # --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานเก่าเรียกดูย้อนหลัง ---
+
+@st.cache_data(ttl=120)
+def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records):
+    tasks_df = pd.DataFrame(tasks_records) if tasks_records else pd.DataFrame()
+    adjustments = adjustments_records or []
+    kpi_records = []
+    for op in operators_records:
+        uname = op.get("username")
+        fullname = op.get("fullname") or uname
+        
+        user_tasks = tasks_df[tasks_df["assignee_name"].fillna("").str.contains(uname)] if not tasks_df.empty and "assignee_name" in tasks_df.columns else pd.DataFrame()
+        tot = len(user_tasks)
+        d_count = len(user_tasks[user_tasks["status"] == "Done"]) if not user_tasks.empty else 0
+        
+        ontime_c = 0
+        late_c = 0
+        ratings = []
+        if not user_tasks.empty:
+            for _, t in user_tasks.iterrows():
+                if t.get("status") == "Done":
+                    if t.get("is_ontime") is True:
+                        ontime_c += 1
+                    elif t.get("is_ontime") is False:
+                        late_c += 1
+                    r = t.get("satisfaction_rating")
+                    if r and r > 0:
+                        ratings.append(r)
+
+        avg_r = sum(ratings) / len(ratings) if ratings else 5.0
+        user_adjs = [a for a in adjustments if a.get("username") == uname]
+        man_pts = sum(float(a.get("points", 0)) for a in user_adjs)
+        
+        tot_kpi = max(0, round((d_count * 5) + (ontime_c * 10) - (late_c * 5) + (avg_r * 4) + man_pts, 1))
+
+        kpi_records.append({
+            "username": uname,
+            "fullname": fullname,
+            "total_tasks": tot,
+            "done_tasks": d_count,
+            "ontime_count": ontime_c,
+            "late_count": late_c,
+            "avg_rating": round(avg_r, 1),
+            "manual_points": man_pts,
+            "total_kpi": tot_kpi
+        })
+
+    kpi_df = pd.DataFrame(kpi_records)
+    if not kpi_df.empty:
+        kpi_df = kpi_df.sort_values(by="total_kpi", ascending=False).reset_index(drop=True)
+    return kpi_df
 
 def show_module3_kpi_dashboard():
     curr_user = st.session_state.user
@@ -728,50 +770,8 @@ def show_module3_kpi_dashboard():
     ])
 
     with tab_kpi:
-        kpi_records = []
-        for op in operators:
-            uname = op.get("username")
-            fullname = op.get("fullname") or uname
-            
-            user_tasks = tasks_df[tasks_df["assignee_name"].fillna("").str.contains(uname)] if not tasks_df.empty and "assignee_name" in tasks_df.columns else pd.DataFrame()
-            tot = len(user_tasks)
-            d_count = len(user_tasks[user_tasks["status"] == "Done"]) if not user_tasks.empty else 0
-            
-            ontime_c = 0
-            late_c = 0
-            ratings = []
-            if not user_tasks.empty:
-                for _, t in user_tasks.iterrows():
-                    if t.get("status") == "Done":
-                        if t.get("is_ontime") is True:
-                            ontime_c += 1
-                        elif t.get("is_ontime") is False:
-                            late_c += 1
-                        r = t.get("satisfaction_rating")
-                        if r and r > 0:
-                            ratings.append(r)
-
-            avg_r = sum(ratings) / len(ratings) if ratings else 5.0
-            user_adjs = [a for a in adjustments if a.get("username") == uname]
-            man_pts = sum(float(a.get("points", 0)) for a in user_adjs)
-            
-            tot_kpi = max(0, round((d_count * 5) + (ontime_c * 10) - (late_c * 5) + (avg_r * 4) + man_pts, 1))
-
-            kpi_records.append({
-                "username": uname,
-                "fullname": fullname,
-                "total_tasks": tot,
-                "done_tasks": d_count,
-                "ontime_count": ontime_c,
-                "late_count": late_c,
-                "avg_rating": round(avg_r, 1),
-                "manual_points": man_pts,
-                "total_kpi": tot_kpi
-            })
-
-        kpi_df = pd.DataFrame(kpi_records)
-        if not kpi_df.empty:
-            kpi_df = kpi_df.sort_values(by="total_kpi", ascending=False).reset_index(drop=True)
+        tasks_records = tasks_df.to_dict('records') if not tasks_df.empty else []
+        kpi_df = compute_kpi_summary_df(tasks_records, operators, adjustments)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -984,9 +984,9 @@ else:
             logo_file = cand
             break
     if logo_file:
-        sb_c1, sb_c2 = st.sidebar.columns([1, 2.2])
+        sb_c1, sb_c2 = st.sidebar.columns([1, 2.5])
         with sb_c1:
-            st.image(logo_file, use_container_width=True)
+            st.image(logo_file, width=48)
         with sb_c2:
             st.markdown(f"**{curr_fullname}**<br/><small style='color:#64748b;'>@{curr_username}</small>", unsafe_allow_html=True)
     else:
@@ -1018,11 +1018,17 @@ else:
     page = st.sidebar.radio("เมนูการใช้งาน", menu_options, index=default_idx)
     
     st.sidebar.markdown("---")
-    if st.sidebar.button("ออกจากระบบ (Logout)", use_container_width=True):
-        st.session_state.logged_in = False
-        st.session_state.user = None
-        clear_all_cache()
-        st.rerun()
+    col_sb1, col_sb2 = st.sidebar.columns(2)
+    with col_sb1:
+        if st.sidebar.button("🔄 ซิงค์ข้อมูล", use_container_width=True):
+            clear_all_cache()
+            st.rerun()
+    with col_sb2:
+        if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.user = None
+            clear_all_cache()
+            st.rerun()
 
     if page == "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)":
         show_module1_commander_page()
