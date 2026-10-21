@@ -1,9 +1,24 @@
 import os
+import base64
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 from supabase import create_client, Client
+
+# --- Logo & Watermark Helper ---
+def get_logo_base64():
+    """แปลงไฟล์โลโก้เป็น Base64 สำหรับทำลายน้ำ (Watermark)"""
+    for path in ["logo.jpg", "logo.png", "workflow_system/logo.jpg"]:
+        if os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    return base64.b64encode(f.read()).decode()
+            except Exception:
+                pass
+    return ""
+
+LOGO_B64 = get_logo_base64()
 
 # --- Supabase Connection ---
 @st.cache_resource
@@ -32,46 +47,85 @@ supabase = get_supabase_client()
 
 # --- Configuration & Theme Setup ---
 st.set_page_config(
-    page_title="Team Workflow Hub",
+    page_title="Team Workflow SVV",
     page_icon="📋",
     layout="wide"
 )
 
-# Custom CSS: Minimal, clean, lightweight without heavy styling overhead
-st.markdown("""
+# Custom CSS: โทนสีฟ้าเข้ากับโลโก้ SVV (Royal & Sky Blue) สบายตาและโหลดเร็ว
+st.markdown(f"""
     <style>
     font-family: 'Sarabun', sans-serif;
     
-    /* Clean line row styling */
-    .task-row {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 10px 14px;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
+    /* การ์ดงานและแถบสีฟ้า SVV */
+    .kanban-card {{
+        background-color: var(--background-color, #ffffff);
+        border: 1px solid #bae6fd;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 10px rgba(2, 132, 199, 0.05);
+        border-left: 5px solid #0284c7;
+    }}
     
-    .badge-status {
+    /* ปุ่มกดสีฟ้า SVV Gradient */
+    div[data-baseweb="button"] > button[kind="primary"] {{
+        background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+        border: none !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25) !important;
+        font-weight: 600 !important;
+    }}
+
+    div[data-baseweb="button"] > button {{
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }}
+
+    /* ป้ายสถานะงาน */
+    .badge-status {{
         padding: 3px 8px;
         border-radius: 6px;
         font-size: 0.75rem;
         font-weight: 600;
         display: inline-block;
-    }
-    .badge-todo { background-color: #f1f5f9; color: #475569; }
-    .badge-progress { background-color: #dbeafe; color: #1e40af; }
-    .badge-review { background-color: #fef3c7; color: #92400e; }
-    .badge-revision { background-color: #ffedd5; color: #9a3412; }
-    .badge-done { background-color: #dcfce7; color: #166534; }
-    .badge-overdue { background-color: #fee2e2; color: #991b1b; font-weight: 700; }
-    .badge-warning { background-color: #fef3c7; color: #b45309; font-weight: 700; }
-    
-    div[data-baseweb="button"] > button {
-        border-radius: 8px !important;
-    }
+    }}
+    .badge-todo {{ background-color: #f1f5f9; color: #475569; }}
+    .badge-progress {{ background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }}
+    .badge-review {{ background-color: #fef3c7; color: #92400e; }}
+    .badge-revision {{ background-color: #ffedd5; color: #9a3412; }}
+    .badge-done {{ background-color: #dcfce7; color: #166534; }}
+    .badge-overdue {{ background-color: #fee2e2; color: #991b1b; font-weight: 700; }}
+    .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
+
+    /* ลายน้ำ Watermark สำหรับหน้าล็อกอิน */
+    .auth-box-watermark {{
+        position: relative;
+        overflow: hidden;
+        border: 1px solid #bae6fd;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 24px;
+        box-shadow: 0 6px 18px rgba(2, 132, 199, 0.06);
+    }}
+    .auth-watermark-bg {{
+        position: absolute;
+        right: -25px;
+        bottom: -25px;
+        width: 190px;
+        height: 190px;
+        opacity: 0.07;
+        background-image: url('data:image/jpeg;base64,{LOGO_B64}');
+        background-size: contain;
+        background-repeat: no-repeat;
+        pointer-events: none;
+        z-index: 0;
+    }}
+    .auth-content {{
+        position: relative;
+        z-index: 1;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -87,11 +141,10 @@ if "logged_in" not in st.session_state:
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# --- Cached Fast Database Functions (เพิ่ม Cache เพื่อความเร็วสูง) ---
+# --- Cached Fast Database Functions ---
 
 @st.cache_data(ttl=4)
 def fetch_tasks():
-    """ดึงข้อมูลงานพร้อม Cache 4 วินาที ไม่ยิงซ้ำทุกครั้งที่กดปุ่ม"""
     try:
         res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
         return pd.DataFrame(res.data) if res.data else pd.DataFrame()
@@ -100,7 +153,6 @@ def fetch_tasks():
 
 @st.cache_data(ttl=15)
 def fetch_all_users():
-    """ดึงรายชื่อผู้ใช้พร้อม Cache 15 วินาที"""
     try:
         res = supabase.table("app_users").select("*").execute()
         return res.data or []
@@ -109,7 +161,6 @@ def fetch_all_users():
 
 @st.cache_data(ttl=5)
 def fetch_kpi_adjustments():
-    """ดึงคะแนนปรับ KPI พร้อม Cache 5 วินาที"""
     try:
         res = supabase.table("kpi_adjustments").select("*").order("created_at", desc=True).execute()
         return res.data or []
@@ -117,7 +168,6 @@ def fetch_kpi_adjustments():
         return []
 
 def clear_all_cache():
-    """ล้าง Cache เมื่อมีการบันทึกหรืออัปเดตข้อมูลใหม่"""
     st.cache_data.clear()
 
 def parse_roles(roles_val):
@@ -160,111 +210,143 @@ def log_task_action(task_id, action, performed_by, details=""):
     except Exception:
         pass
 
-# --- Authentication & Registration Page ---
+# --- Authentication & Registration Page (มีโลโก้ & ลายน้ำ Watermark & โทนสีฟ้า) ---
 
 def show_auth_page():
-    st.title("🔒 เข้าสู่ระบบ (System Login)")
+    # แสดงโลโก้ตรงกลาง
+    col1, col2, col3 = st.columns([1.6, 1, 1.6])
+    with col2:
+        if os.path.exists("logo.jpg"):
+            st.image("logo.jpg", use_container_width=True)
     
+    st.markdown("""
+        <div style="text-align: center; margin-bottom: 1.25rem;">
+            <h2 style="color: #0369a1; font-weight: 700; margin: 4px 0;">TEAM WORKFLOW SVV</h2>
+            <p style="color: #64748b; font-size: 0.95rem;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
+        </div>
+    """, unsafe_allow_html=True)
+
     tab_login, tab_register, tab_reset = st.tabs([
-        "เข้าสู่ระบบ", 
-        "สมัครสมาชิกใหม่", 
-        "ลืม / เปลี่ยนรหัสผ่าน"
+        "🔒 เข้าสู่ระบบ", 
+        "📝 สมัครสมาชิกใหม่", 
+        "🔑 ลืม / เปลี่ยนรหัสผ่าน"
     ])
 
     with tab_login:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            with st.container(border=True):
-                st.subheader("เข้าสู่ระบบ")
-                username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
-                password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
-                
-                if st.button("เข้าสู่ระบบ", use_container_width=True, type="primary"):
-                    if not username or not password:
-                        st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
-                    else:
-                        try:
-                            res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
-                            if res.data and len(res.data) > 0:
-                                user = res.data[0]
-                                is_approved = user.get("is_approved")
-                                if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
-                                    st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
-                                else:
-                                    st.session_state.logged_in = True
-                                    st.session_state.user = user
-                                    clear_all_cache()
-                                    st.rerun()
+            st.markdown(f"""
+                <div class="auth-box-watermark">
+                    <div class="auth-watermark-bg"></div>
+                    <div class="auth-content">
+            """, unsafe_allow_html=True)
+            
+            st.subheader("เข้าสู่ระบบ")
+            username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
+            password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
+            
+            if st.button("เข้าสู่ระบบ", use_container_width=True, type="primary"):
+                if not username or not password:
+                    st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
+                else:
+                    try:
+                        res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
+                        if res.data and len(res.data) > 0:
+                            user = res.data[0]
+                            is_approved = user.get("is_approved")
+                            if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
+                                st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
                             else:
-                                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาด: {e}")
+                                st.session_state.logged_in = True
+                                st.session_state.user = user
+                                clear_all_cache()
+                                st.rerun()
+                        else:
+                            st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                    except Exception as e:
+                        st.error(f"เกิดข้อผิดพลาด: {e}")
+            
+            st.markdown('</div></div>', unsafe_allow_html=True)
 
     with tab_register:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            with st.container(border=True):
-                st.subheader("ลงทะเบียนพนักงานใหม่")
-                with st.form("reg_form", clear_on_submit=True):
-                    r_user = st.text_input("Username *")
-                    r_name = st.text_input("ชื่อ - สกุล *")
-                    r_email = st.text_input("Email *")
-                    r_phone = st.text_input("เบอร์โทรศัพท์ *")
-                    r_p1 = st.text_input("รหัสผ่าน *", type="password")
-                    r_p2 = st.text_input("ยืนยันรหัสผ่าน *", type="password")
-                    
-                    if st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True):
-                        if not (r_user and r_name and r_email and r_phone and r_p1):
-                            st.error("กรุณากรอกข้อมูลให้ครบทุกช่อง")
-                        elif r_p1 != r_p2:
-                            st.error("รหัสผ่านไม่ตรงกัน")
+            st.markdown(f"""
+                <div class="auth-box-watermark">
+                    <div class="auth-watermark-bg"></div>
+                    <div class="auth-content">
+            """, unsafe_allow_html=True)
+            
+            st.subheader("ลงทะเบียนพนักงานใหม่")
+            with st.form("reg_form", clear_on_submit=True):
+                r_user = st.text_input("Username *")
+                r_name = st.text_input("ชื่อ - สกุล *")
+                r_email = st.text_input("Email *")
+                r_phone = st.text_input("เบอร์โทรศัพท์ *")
+                r_p1 = st.text_input("รหัสผ่าน *", type="password")
+                r_p2 = st.text_input("ยืนยันรหัสผ่าน *", type="password")
+                
+                if st.form_submit_button("ส่งคำขอสมัครสมาชิก", use_container_width=True, type="primary"):
+                    if not (r_user and r_name and r_email and r_phone and r_p1):
+                        st.error("กรุณากรอกข้อมูลให้ครบทุกช่อง")
+                    elif r_p1 != r_p2:
+                        st.error("รหัสผ่านไม่ตรงกัน")
+                    else:
+                        check = supabase.table("app_users").select("username").eq("username", r_user).execute()
+                        if check.data:
+                            st.error("Username นี้มีอยู่ในระบบแล้ว")
                         else:
-                            check = supabase.table("app_users").select("username").eq("username", r_user).execute()
-                            if check.data:
-                                st.error("Username นี้มีอยู่ในระบบแล้ว")
-                            else:
-                                new_u = {
-                                    "username": r_user.strip(),
-                                    "password_hash": r_p1,
-                                    "fullname": r_name.strip(),
-                                    "email": r_email.strip(),
-                                    "phone": r_phone.strip(),
-                                    "role": "Employee",
-                                    "roles": "ปฏิบัติงาน",
-                                    "is_approved": False
-                                }
-                                supabase.table("app_users").insert(new_u).execute()
-                                clear_all_cache()
-                                st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
+                            new_u = {
+                                "username": r_user.strip(),
+                                "password_hash": r_p1,
+                                "fullname": r_name.strip(),
+                                "email": r_email.strip(),
+                                "phone": r_phone.strip(),
+                                "role": "Employee",
+                                "roles": "ปฏิบัติงาน",
+                                "is_approved": False
+                            }
+                            supabase.table("app_users").insert(new_u).execute()
+                            clear_all_cache()
+                            st.success("✅ สมัครสำเร็จ! กรุณารอ Admin อนุมัติสิทธิ์เข้าใช้งาน")
+            
+            st.markdown('</div></div>', unsafe_allow_html=True)
 
     with tab_reset:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            with st.container(border=True):
-                st.subheader("ตั้งรหัสผ่านใหม่")
-                with st.form("reset_form"):
-                    rs_user = st.text_input("Username *")
-                    rs_contact = st.text_input("Email หรือ เบอร์โทรที่ลงทะเบียนไว้ *")
-                    rs_p1 = st.text_input("รหัสผ่านใหม่ *", type="password")
-                    rs_p2 = st.text_input("ยืนยันรหัสผ่านใหม่ *", type="password")
-                    
-                    if st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True):
-                        if not (rs_user and rs_contact and rs_p1):
-                            st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
-                        elif rs_p1 != rs_p2:
-                            st.error("รหัสผ่านไม่ตรงกัน")
+            st.markdown(f"""
+                <div class="auth-box-watermark">
+                    <div class="auth-watermark-bg"></div>
+                    <div class="auth-content">
+            """, unsafe_allow_html=True)
+            
+            st.subheader("ตั้งรหัสผ่านใหม่")
+            with st.form("reset_form"):
+                rs_user = st.text_input("Username *")
+                rs_contact = st.text_input("Email หรือ เบอร์โทรที่ลงทะเบียนไว้ *")
+                rs_p1 = st.text_input("รหัสผ่านใหม่ *", type="password")
+                rs_p2 = st.text_input("ยืนยันรหัสผ่านใหม่ *", type="password")
+                
+                if st.form_submit_button("บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
+                    if not (rs_user and rs_contact and rs_p1):
+                        st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
+                    elif rs_p1 != rs_p2:
+                        st.error("รหัสผ่านไม่ตรงกัน")
+                    else:
+                        u_res = supabase.table("app_users").select("*").eq("username", rs_user.strip()).execute()
+                        if not u_res.data:
+                            st.error("ไม่พบบัญชีผู้ใช้นี้")
                         else:
-                            u_res = supabase.table("app_users").select("*").eq("username", rs_user.strip()).execute()
-                            if not u_res.data:
-                                st.error("ไม่พบบัญชีผู้ใช้นี้")
+                            ud = u_res.data[0]
+                            if rs_contact.strip().lower() in [str(ud.get("email")).strip().lower(), str(ud.get("phone")).strip()]:
+                                supabase.table("app_users").update({"password_hash": rs_p1}).eq("user_id", ud["user_id"]).execute()
+                                clear_all_cache()
+                                st.success("✅ แก้ไขรหัสผ่านสำเร็จแล้ว! สามารถเข้าสู่ระบบด้วยรหัสใหม่ได้ทันที")
                             else:
-                                ud = u_res.data[0]
-                                if rs_contact.strip().lower() in [str(ud.get("email")).strip().lower(), str(ud.get("phone")).strip()]:
-                                    supabase.table("app_users").update({"password_hash": rs_p1}).eq("user_id", ud["user_id"]).execute()
-                                    clear_all_cache()
-                                    st.success("✅ แก้ไขรหัสผ่านสำเร็จแล้ว! สามารถเข้าสู่ระบบด้วยรหัสใหม่ได้ทันที")
-                                else:
-                                    st.error("Email หรือ เบอร์โทรไม่ตรงกับข้อมูลในระบบ")
+                                st.error("Email หรือ เบอร์โทรไม่ตรงกับข้อมูลในระบบ")
+            
+            st.markdown('</div></div>', unsafe_allow_html=True)
 
 # --- Module 1: ระบบสั่งการและมอบหมายงาน (เฉพาะยศ 'ระดับสั่งการ') ---
 
@@ -349,7 +431,7 @@ def show_module1_commander_page():
                         st.caption(f"เหตุผล: {row.get('handover_reason') or '-'}")
                         c1, c2 = st.columns(2)
                         with c1:
-                            if st.button("✅ อนุมัติส่งต่อ", key=f"ap_ho_{row['task_id']}", use_container_width=True):
+                            if st.button("✅ อนุมัติส่งต่อ", key=f"ap_ho_{row['task_id']}", use_container_width=True, type="primary"):
                                 new_assignee = row.get("handover_to")
                                 supabase.table("tasks").update({
                                     "assignee_name": new_assignee,
@@ -429,7 +511,7 @@ def show_module1_commander_page():
                     points = st.number_input("คะแนน:", min_value=1.0, max_value=50.0, value=5.0, step=1.0)
                     reason = st.text_area("เหตุผลในการปรับคะแนน *")
 
-                if st.form_submit_button("บันทึกการปรับคะแนน", use_container_width=True):
+                if st.form_submit_button("บันทึกการปรับคะแนน", use_container_width=True, type="primary"):
                     if not reason:
                         st.error("กรุณาระบุเหตุผล")
                     else:
@@ -488,10 +570,10 @@ def show_module2_kanban_page():
         st.info("ไม่พบรายการงานที่ตรงตามเงื่อนไขตัวกรอง")
         return
 
-    # มุมมองแสดงผล: เลือกระหว่าง 'ตารางทีละบรรทัด (อ่านง่าย โหลดไว)' กับ 'แยกคอลัมน์สถานะ'
+    # มุมมองแสดงผล
     view_style = st.radio("รูปแบบมุมมอง:", ["📄 แสดงเป็นบรรทัดกระชับ (Compact List - อ่านง่าย โหลดไว)", "📊 แสดงแยก 5 ช่องสถานะ (Kanban Columns)"], horizontal=True)
 
-    # 1. แสดงเป็นรายการทีละบรรทัด (เหมือนภาพที่ 2 โหลดไวมาก อ่านง่าย)
+    # 1. แสดงเป็นรายการทีละบรรทัด (โหลดไวมาก อ่านง่าย)
     if "Compact List" in view_style:
         st.markdown(f"**พบรายการงานทั้งหมด:** `{len(filtered_df)} รายการ`")
 
@@ -499,14 +581,12 @@ def show_module2_kanban_page():
             status = row.get("status", "To Do")
             due_str = row.get("due_date") or "-"
             
-            # ป้ายสถานะ
             stat_color = "badge-todo"
             if status == "In Progress": stat_color = "badge-progress"
             elif status == "In Review": stat_color = "badge-review"
             elif status == "Revision": stat_color = "badge-revision"
             elif status == "Done": stat_color = "badge-done"
 
-            # ตรวจสอบวันกำหนดส่ง
             alert_tag = ""
             if status != "Done" and row.get("due_date"):
                 try:
@@ -527,7 +607,7 @@ def show_module2_kanban_page():
                         <div style="font-size: 1.05rem; font-weight: 700; color: #1e293b;">
                             {row.get('title')} 
                             <span class="badge-status {stat_color}">{status}</span>
-                            <span class="badge-status" style="background:#e2e8f0; color:#334155;">{row.get('task_type')}</span>
+                            <span class="badge-status" style="background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd;">{row.get('task_type')}</span>
                             {alert_tag} {handover_tag}
                         </div>
                         <div style="font-size: 0.85rem; color: #64748b; margin-top: 4px;">
@@ -546,9 +626,8 @@ def show_module2_kanban_page():
 
                         st.divider()
 
-                        # ปุ่มสถานะสำหรับพนักงาน
                         if status in ['To Do', 'Revision']:
-                            if st.button("🚀 เริ่มงาน (In Progress)", key=f"btn_st_{row['task_id']}", use_container_width=True):
+                            if st.button("🚀 เริ่มงาน (In Progress)", key=f"btn_st_{row['task_id']}", use_container_width=True, type="primary"):
                                 supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", row["task_id"]).execute()
                                 log_task_action(row["task_id"], "เริ่มดำเนินงาน", curr_username, "ย้ายไป In Progress")
                                 clear_all_cache()
@@ -574,12 +653,11 @@ def show_module2_kanban_page():
                                 st.success("ส่งงานสำเร็จ!")
                                 st.rerun()
 
-                        # ขอส่งต่อ
                         if status not in ['Done', 'In Review']:
                             with st.expander("🤝 ขอส่งงานต่อ"):
                                 to_op = st.selectbox("เลือกผู้รับต่อ:", [op["username"] for op in operators if op["username"] != curr_username], key=f"ho_{row['task_id']}")
                                 ho_r = st.text_input("เหตุผล:", key=f"hr_{row['task_id']}")
-                                if st.button("ยืนยันส่งต่อ", key=f"hbtn_{row['task_id']}"):
+                                if st.button("ยืนยันส่งต่อ", key=f"hbtn_{row['task_id']}", use_container_width=True):
                                     if ho_r:
                                         supabase.table("tasks").update({
                                             "handover_to": to_op,
@@ -590,13 +668,12 @@ def show_module2_kanban_page():
                                         st.success("ส่งคำขอแล้ว!")
                                         st.rerun()
 
-                        # ระดับสั่งการย้ายโดยตรง
                         if is_commander:
                             st.divider()
                             st.caption("สิทธิ์ผู้สั่งการ: ย้ายสถานะโดยตรง")
                             all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
                             new_s = st.selectbox("ย้ายไป:", all_stats, index=all_stats.index(status), key=f"cmd_s_{row['task_id']}")
-                            if st.button("อัปเดตสถานะ", key=f"cmd_upd_{row['task_id']}"):
+                            if st.button("อัปเดตสถานะ", key=f"cmd_upd_{row['task_id']}", use_container_width=True):
                                 supabase.table("tasks").update({"status": new_s}).eq("task_id", row["task_id"]).execute()
                                 clear_all_cache()
                                 st.rerun()
@@ -701,7 +778,7 @@ def show_module3_kpi_dashboard():
                     x="fullname", 
                     y="total_kpi", 
                     labels={"fullname": "พนักงาน", "total_kpi": "คะแนน KPI รวม"},
-                    color_discrete_sequence=['#b4c6e7']
+                    color_discrete_sequence=['#0284c7']
                 )
                 fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig1, use_container_width=True)
@@ -715,7 +792,7 @@ def show_module3_kpi_dashboard():
                     y=["ontime_count", "late_count"],
                     labels={"value": "จำนวนงาน", "fullname": "พนักงาน", "variable": "ประเภท"},
                     barmode="group",
-                    color_discrete_map={"ontime_count": "#a7f3d0", "late_count": "#fecaca"}
+                    color_discrete_map={"ontime_count": "#0284c7", "late_count": "#f87171"}
                 )
                 fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig2, use_container_width=True)
@@ -745,7 +822,7 @@ def show_module3_kpi_dashboard():
                         points_e = st.number_input("คะแนนที่ปรับ (+/-):", value=5.0, step=1.0)
                     with ea3:
                         reason_e = st.text_input("หมายเหตุ:")
-                    if st.form_submit_button("บันทึกการปรับคะแนน"):
+                    if st.form_submit_button("บันทึกการปรับคะแนน", type="primary"):
                         clean_tp = "ความดีความชอบ" if points_e >= 0 else "ความผิดพลาด"
                         supabase.table("kpi_adjustments").insert({
                             "username": target_e,
@@ -813,7 +890,8 @@ def show_module3_kpi_dashboard():
                 label="📥 ดาวน์โหลดรายงานนี้เป็นไฟล์ Excel (CSV)",
                 data=csv,
                 file_name=f"work_history_report_{datetime.today().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
+                mime="text/csv",
+                type="primary"
             )
 
 # --- Admin Panel: จัดการผู้ใช้งาน ---
@@ -894,8 +972,16 @@ else:
     curr_roles = parse_roles(curr_user.get("roles"))
     is_admin = curr_user.get("role") == "Admin" or curr_username == "admin"
     
-    st.sidebar.markdown(f"### 👤 ผู้ใช้งาน: **{curr_fullname}**")
-    st.sidebar.caption(f"Username: @{curr_username}")
+    # แสดงโลโก้ใน Sidebar
+    if os.path.exists("logo.jpg"):
+        sb_c1, sb_c2 = st.sidebar.columns([1, 2.2])
+        with sb_c1:
+            st.image("logo.jpg", use_container_width=True)
+        with sb_c2:
+            st.markdown(f"**{curr_fullname}**<br/><small style='color:#64748b;'>@{curr_username}</small>", unsafe_allow_html=True)
+    else:
+        st.sidebar.markdown(f"### 👤 ผู้ใช้งาน: **{curr_fullname}**")
+        st.sidebar.caption(f"Username: @{curr_username}")
     
     badge_html = ""
     if is_admin:
