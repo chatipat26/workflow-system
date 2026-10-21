@@ -1171,16 +1171,21 @@ else:
     st.sidebar.markdown(badge_html, unsafe_allow_html=True)
     st.sidebar.markdown("---")
     
-    # เมนูการใช้งาน
+    # ตรวจสอบสิทธิ์ระดับสั่งการ
+    is_commander = user_has_role(curr_user, "ระดับสั่งการ")
+    
+    # เมนูการใช้งาน เรียงลำดับ 1, 2, 3 และ Admin
     menu_options = [
+        "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)",
         "โมดูลที่ 2: กระดานงาน (Kanban Board)", 
-        "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)", 
         "โมดูลที่ 3: แดชบอร์ดคะแนน KPI"
     ]
     if is_admin:
         menu_options.append("⚙️ ผู้ดูแลระบบ (Admin Panel)")
 
-    page = st.sidebar.radio("📌 เลือกเมนูระบบ", menu_options)
+    # ตั้งค่าหน้าเริ่มต้น: ถ้าระดับสั่งการให้เริ่มโมดูล 1, ถ้าปฏิบัติงานให้เริ่มโมดูล 2
+    default_idx = 0 if is_commander else 1
+    page = st.sidebar.radio("📌 เลือกเมนูระบบ", menu_options, index=default_idx)
     
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
@@ -1189,10 +1194,10 @@ else:
         st.rerun()
 
     # Routing
-    if page == "โมดูลที่ 2: กระดานงาน (Kanban Board)":
-        show_module2_kanban_page()
-    elif page == "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)":
+    if page == "โมดูลที่ 1: ระบบสั่งการและมอบหมายงาน (Commander)":
         show_module1_commander_page()
+    elif page == "โมดูลที่ 2: กระดานงาน (Kanban Board)":
+        show_module2_kanban_page()
     elif page == "โมดูลที่ 3: แดชบอร์ดคะแนน KPI":
         show_module3_kpi_dashboard()
     elif page == "⚙️ ผู้ดูแลระบบ (Admin Panel)":
