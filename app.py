@@ -1,10 +1,13 @@
 import os
+import io
+import re
 import base64
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import plotly.express as px
 from supabase import create_client, Client
+from PIL import Image, ImageOps
 
 # --- Logo & Watermark Helper (Cached เพื่อความเร็ว) ---
 @st.cache_data
@@ -364,12 +367,15 @@ export default function (component) {
           priorityTag = `<span style="background:#fef3c7; color:#b45309; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap;">⚡ ด่วน</span>`;
         }
 
+        let imageBadge = task.hasImage ? `<span style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid #bae6fd;">📸 มีรูป</span>` : "";
+
         html += `
           <div class="kanban-card" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}">
             <div class="card-header-row">
               <div class="card-title">${task.title}</div>
               <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
                 ${priorityTag}
+                ${imageBadge}
                 <span class="card-type-tag">${task.taskType || 'Project'}</span>
               </div>
             </div>
@@ -758,6 +764,70 @@ def format_datetime_thai(dt_val):
     except Exception:
         return str(dt_val)[:16]
 
+# --- Helper สำหรับจัดการรูปภาพ (Google Drive Link & อัปโหลด Base64) ---
+
+def convert_gdrive_url(url):
+    """แปลง Google Drive Share Link เป็น direct viewable URL สำหรับแสดงผลในแท็ก img หรือ st.image"""
+    if not url or not isinstance(url, str):
+        return url
+    url = url.strip()
+    m = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', url)
+    if m:
+        return f"https://lh3.googleusercontent.com/d/{m.group(1)}"
+    m = re.search(r'drive\.google\.com/(?:open|uc)\?(?:[^&]*&)*id=([a-zA-Z0-9_-]+)', url)
+    if m:
+        return f"https://lh3.googleusercontent.com/d/{m.group(1)}"
+    return url
+
+def is_image_url_or_data(url):
+    """ตรวจสอบว่าค่าที่ส่งมาเป็นรูปภาพ (Data URI, Google Drive, หรือ URL รูปภาพทั่วไป) หรือไม่"""
+    if not url or not isinstance(url, str):
+        return False
+    u = url.strip().lower()
+    if u.startswith("data:image/"):
+        return True
+    if "drive.google.com" in u or "googleusercontent.com" in u:
+        return True
+    if any(u.endswith(ext) or ext in u for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]):
+        return True
+    return False
+
+def process_uploaded_image_file(uploaded_file, max_size=(1280, 1280), quality=80):
+    """บีบอัดและแปลงไฟล์รูปภาพที่อัปโหลดเป็น Base64 Data URI เพื่อจัดเก็บในฐานข้อมูล Supabase ได้อย่างปลอดภัยและรวดเร็ว"""
+    if not uploaded_file:
+        return None
+    try:
+        img = Image.open(uploaded_file)
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64_str}"
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการประมวลผลรูปภาพ: {e}")
+        return None
+
+def render_image_preview(img_val, caption="รูปภาพประกอบ"):
+    """แสดงผลรูปภาพในแอปพลิเคชันอย่างสวยงาม รองรับทั้ง Base64, Google Drive, และเว็บลิงก์ทั่วไป"""
+    if not img_val:
+        return
+    img_str = str(img_val).strip()
+    direct_url = convert_gdrive_url(img_str)
+    with st.container(border=True):
+        st.caption(f"📸 **{caption}**")
+        try:
+            st.image(direct_url, use_container_width=True)
+        except Exception:
+            st.markdown(f"📎 [{caption} (คลิกดูภาพ)]({img_str})")
+        if not img_str.startswith("data:image/"):
+            st.markdown(f"🔗 [คลิกเปิดดูไฟล์ต้นฉบับ]({img_str})")
+
 def user_can_edit_task_progress(curr_user, task):
     """ตรวจสอบสิทธิ์: เพิ่มเติมแก้ไขบันทึกได้เฉพาะผู้รับผิดชอบงาน และ User ระดับสั่งการ / Admin เท่านั้น"""
     if not curr_user or not task:
@@ -799,7 +869,10 @@ def show_task_progress_dialog(task, curr_user):
         if desc and desc != "-":
             st.caption(f"**ขอบเขตงาน (Scope):** {desc}")
         if attachment:
-            st.markdown(f"📎 **ไฟล์แนบ / ลิงก์:** [{attachment}]({attachment})")
+            if is_image_url_or_data(attachment):
+                render_image_preview(attachment, caption="รูปภาพแนบเปิดงาน / เอกสารประกอบ")
+            else:
+                st.markdown(f"📎 **ไฟล์แนบ / ลิงก์:** [{attachment}]({attachment})")
 
     st.markdown("---")
 
@@ -820,19 +893,36 @@ def show_task_progress_dialog(task, curr_user):
 
             progress_detail = st.text_area("รายละเอียดความคืบหน้า / รายงานสรุปงาน *:", placeholder="ระบุสิ่งที่ทำเสร็จแล้ว ขั้นตอนต่อไป ผลลัพธ์ หรือลิงก์เอกสาร...")
 
+            p_img_c1, p_img_c2 = st.columns(2)
+            with p_img_c1:
+                p_file = st.file_uploader("📸 แนบรูปความคืบหน้า (คลิกอัปโหลด):", type=["png", "jpg", "jpeg", "webp"], key=f"p_file_{tid}")
+            with p_img_c2:
+                p_link = st.text_input("🔗 หรือลิงก์ Google Drive / รูปภาพ:", placeholder="https://drive.google.com/...", key=f"p_link_{tid}")
+
             submitted = st.form_submit_button("💾 บันทึกรายงานความคืบหน้า", type="primary", use_container_width=True)
 
             if submitted:
-                if not progress_detail.strip():
-                    st.error("กรุณาระบุรายละเอียดก่อนกดบันทึก")
+                if not progress_detail.strip() and not p_file and not (p_link and p_link.strip()):
+                    st.error("กรุณาระบุรายละเอียดหรือแนบรูปภาพก่อนกดบันทึก")
                 else:
                     try:
                         clean_action = log_type.split(" ", 1)[1] if " " in log_type else log_type
+
+                        img_str = None
+                        if p_file:
+                            img_str = process_uploaded_image_file(p_file)
+                        elif p_link and p_link.strip():
+                            img_str = p_link.strip()
+
+                        full_details = progress_detail.strip()
+                        if img_str:
+                            full_details = f"{full_details}\n\n[ATTACHED_IMAGE: {img_str}]"
+
                         supabase.table("task_logs").insert({
                             "task_id": tid,
                             "action": clean_action,
                             "performed_by": curr_user.get("username"),
-                            "details": progress_detail.strip()
+                            "details": full_details
                         }).execute()
                         clear_all_cache()
                         st.success("✅ บันทึกรายงานความคืบหน้าสำเร็จแล้ว!")
@@ -879,19 +969,35 @@ def show_task_progress_dialog(task, curr_user):
                 with time_col:
                     st.caption(f"🕒 {created_at_fmt}")
 
-                st.markdown(f"<div style='margin-top:6px; font-size:0.95rem; color:#1e293b; line-height:1.5;'>{details if details else '-'}</div>", unsafe_allow_html=True)
+                # แยกข้อความและรูปภาพแนบออกจาก details
+                raw_details = details if details else "-"
+                txt_part = raw_details
+                img_part = None
+                if "[ATTACHED_IMAGE:" in raw_details:
+                    split_res = raw_details.split("[ATTACHED_IMAGE:")
+                    txt_part = split_res[0].strip()
+                    img_part = split_res[1].split("]")[0].strip()
+                elif is_image_url_or_data(raw_details):
+                    img_part = raw_details
+
+                st.markdown(f"<div style='margin-top:6px; font-size:0.95rem; color:#1e293b; line-height:1.5;'>{txt_part if txt_part else '-'}</div>", unsafe_allow_html=True)
+                if img_part:
+                    render_image_preview(img_part, caption="รูปภาพประกอบความคืบหน้า")
 
                 # สิทธิ์แก้ไขหรือลบบันทึก: เฉพาะผู้เขียนบันทึกนั้นๆ หรือ User ระดับสั่งการ / Admin
                 is_author = (curr_user.get("username") == performed_by)
                 has_modify_right = is_author or user_has_role(curr_user, "ระดับสั่งการ") or (curr_user.get("role") == "Admin") or (curr_user.get("username") == "admin")
                 if can_edit and has_modify_right and action not in ["สร้างงานใหม่"]:
                     with st.expander("✏️ แก้ไข / ลบบันทึกนี้"):
-                        new_txt = st.text_area("แก้ไขเนื้อหา:", value=details, key=f"ed_txt_{l['log_id']}")
+                        new_txt = st.text_area("แก้ไขเนื้อหา:", value=txt_part, key=f"ed_txt_{l['log_id']}")
                         btn_c1, btn_c2 = st.columns([1, 1])
                         with btn_c1:
                             if st.button("บันทึกการแก้ไข", key=f"btn_sv_{l['log_id']}", type="primary", use_container_width=True):
                                 if new_txt.strip():
-                                    supabase.table("task_logs").update({"details": new_txt.strip()}).eq("log_id", l["log_id"]).execute()
+                                    final_save_details = new_txt.strip()
+                                    if img_part:
+                                        final_save_details += f"\n\n[ATTACHED_IMAGE: {img_part}]"
+                                    supabase.table("task_logs").update({"details": final_save_details}).eq("log_id", l["log_id"]).execute()
                                     st.success("บันทึกการแก้ไขเรียบร้อยแล้ว!")
                                     st.rerun(scope="fragment")
                                 else:
@@ -1045,6 +1151,25 @@ def show_approve_done_dialog(task, curr_user):
     
     ot_badge = "🟢 ส่งตรงเวลา (+10 แต้ม)" if is_ot is True else ("🔴 ส่งเกินกำหนด (-5 แต้ม)" if is_ot is False else "⚪ ตรวจสอบวันส่ง")
     st.markdown(f"**สถานะการส่งงาน:** {ot_badge}")
+
+    # แสดงผลงานที่ส่งมอบ และรูปภาพผลงาน (ถ้ามี)
+    sub_raw = task.get("submission_note") or ""
+    done_img = None
+    done_txt = sub_raw
+    if "[ATTACHED_IMAGE:" in sub_raw:
+        s_parts = sub_raw.split("[ATTACHED_IMAGE:")
+        done_txt = s_parts[0].strip()
+        done_img = s_parts[1].split("]")[0].strip()
+    elif is_image_url_or_data(sub_raw):
+        done_img = sub_raw
+    elif is_image_url_or_data(task.get("attachment_url")):
+        done_img = task.get("attachment_url")
+
+    if done_txt:
+        st.markdown(f"**📝 รายละเอียดส่งมอบงาน:** {done_txt}")
+    if done_img:
+        render_image_preview(done_img, caption="📸 ภาพผลงานสำเร็จที่ส่งมอบ")
+
     st.divider()
 
     with st.form(f"form_done_{tid}"):
@@ -1077,10 +1202,12 @@ def show_approve_done_dialog(task, curr_user):
                         "status": "Done",
                         "satisfaction_rating": rating,
                         "completed_at": now_iso,
-                        "submission_note": feedback.strip() if feedback else None
+                        "submission_note": feedback.strip() if feedback else task.get("submission_note")
                     }).eq("task_id", tid).execute()
 
                 log_details = f"อนุมัติผลงานสำเร็จ ({rating} ดาว) " + (f"- {feedback.strip()}" if feedback else "")
+                if done_img:
+                    log_details += f"\n\n[ATTACHED_IMAGE: {done_img}]"
                 supabase.table("task_logs").insert({
                     "task_id": tid,
                     "action": "อนุมัติงานสำเร็จ",
@@ -1111,10 +1238,17 @@ def show_submit_work_dialog(task, curr_user):
     
     with st.form(f"form_submit_{tid}"):
         s_note = st.text_area("📝 สรุปผลงาน / ลิงก์ส่งมอบงาน *:", placeholder="ระบุรายละเอียดผลงาน ลิงก์เอกสาร หรือผลลัพธ์ที่ได้...")
+        
+        c_sub_f1, c_sub_f2 = st.columns(2)
+        with c_sub_f1:
+            sub_file = st.file_uploader("📸 แนบรูปภาพผลงานสำเร็จ (คลิกอัปโหลด):", type=["png", "jpg", "jpeg", "webp"], key=f"s_img_{tid}")
+        with c_sub_f2:
+            sub_link = st.text_input("🔗 หรือลิงก์ Google Drive / ผลงาน:", placeholder="https://drive.google.com/...", key=f"s_lnk_{tid}")
+
         submitted = st.form_submit_button("✅ ยืนยันส่งงาน (ย้ายไป In Review)", type="primary", use_container_width=True)
         if submitted:
-            if not s_note.strip():
-                st.error("กรุณาระบุสรุปผลงานหรือลิงก์ส่งมอบงาน")
+            if not s_note.strip() and not sub_file and not (sub_link and sub_link.strip()):
+                st.error("กรุณาระบุสรุปผลงานหรือแนบรูปภาพผลงาน")
             else:
                 is_ot = True
                 if curr_due:
@@ -1123,13 +1257,28 @@ def show_submit_work_dialog(task, curr_user):
                             is_ot = False
                     except Exception:
                         pass
-                supabase.table("tasks").update({
+                
+                fin_sub_img = None
+                if sub_file:
+                    fin_sub_img = process_uploaded_image_file(sub_file)
+                elif sub_link and sub_link.strip():
+                    fin_sub_img = sub_link.strip()
+
+                comb_sub = s_note.strip()
+                if fin_sub_img:
+                    comb_sub = f"{comb_sub}\n\n[ATTACHED_IMAGE: {fin_sub_img}]"
+
+                upd_data = {
                     "status": "In Review",
-                    "submission_note": s_note.strip(),
+                    "submission_note": comb_sub,
                     "completed_at": datetime.now().isoformat(),
                     "is_ontime": is_ot
-                }).eq("task_id", tid).execute()
-                log_task_action(tid, "ส่งงานเพื่อรออนุมัติ", curr_username, f"หมายเหตุ: {s_note.strip()}")
+                }
+                if fin_sub_img and not task.get("attachment_url"):
+                    upd_data["attachment_url"] = fin_sub_img
+
+                supabase.table("tasks").update(upd_data).eq("task_id", tid).execute()
+                log_task_action(tid, "ส่งงานเพื่อรออนุมัติ", curr_username, f"หมายเหตุ: {comb_sub}")
                 clear_all_cache()
                 st.success("ส่งงานสำเร็จ! งานย้ายไป In Review เรียบร้อยแล้ว")
                 st.rerun()
@@ -1427,9 +1576,10 @@ def show_module1_commander_page():
             with col2:
                 due_date = st.date_input("กำหนดวันส่งงาน (Due Date) *")
                 selected_ops = st.multiselect("ระบุผู้ปฏิบัติงาน (เลือกได้มากกว่า 1 คน) *", options=list(op_dict.keys()))
-                attachment = st.text_input("ลิงก์ไฟล์แนบ (Google Drive / Cloud Link)")
+                attachment_link = st.text_input("ลิงก์ไฟล์แนบ (Google Drive / Cloud Link)", placeholder="https://drive.google.com/...")
 
             description = st.text_area("รายละเอียดขอบเขตงาน (Scope of Work) *")
+            uploaded_task_img = st.file_uploader("📸 แนบรูปภาพเปิดงาน (คลิกเลือกไฟล์รูปภาพจากอุปกรณ์):", type=["png", "jpg", "jpeg", "webp"], key="create_task_img")
             submitted = st.form_submit_button("บันทึกและส่งงานไปยังกระดาน", use_container_width=True, type="primary")
 
             if submitted:
@@ -1437,6 +1587,12 @@ def show_module1_commander_page():
                     st.error("กรุณากรอกข้อมูลที่จำเป็น (*) และเลือกผู้ปฏิบัติงาน")
                 else:
                     assigned_str = ", ".join([op_dict[op] for op in selected_ops])
+                    final_attach = None
+                    if uploaded_task_img:
+                        final_attach = process_uploaded_image_file(uploaded_task_img)
+                    elif attachment_link and attachment_link.strip():
+                        final_attach = attachment_link.strip()
+
                     new_task = {
                         "title": title.strip(),
                         "description": description.strip(),
@@ -1449,7 +1605,7 @@ def show_module1_commander_page():
                         "creator_username": curr_user.get("username"),
                         "requester_name": curr_user.get("fullname") or curr_user.get("username"),
                         "requester_dept": "ระดับสั่งการ",
-                        "attachment_url": attachment.strip() if attachment else None,
+                        "attachment_url": final_attach,
                         "handover_status": "None"
                     }
                     try:
@@ -1542,7 +1698,22 @@ def show_module1_commander_page():
                     with st.container(border=True):
                         ot_badge = "🟢 ส่งตรงเวลา" if row.get("is_ontime") is True else ("🔴 ส่งเกินกำหนด" if row.get("is_ontime") is False else "⚪ รอตรวจสอบวันส่ง")
                         st.markdown(f"**ชื่องาน:** {row['title']} | {ot_badge}")
-                        st.write(f"ผู้รับผิดชอบ: **{row.get('assignee_name') or '-'}** | ผลงานที่ส่ง: {row.get('submission_note') or row.get('attachment_url') or '-'}")
+                        
+                        s_raw = row.get("submission_note") or ""
+                        s_img = None
+                        s_txt = s_raw
+                        if "[ATTACHED_IMAGE:" in s_raw:
+                            sp = s_raw.split("[ATTACHED_IMAGE:")
+                            s_txt = sp[0].strip()
+                            s_img = sp[1].split("]")[0].strip()
+                        elif is_image_url_or_data(s_raw):
+                            s_img = s_raw
+                        elif is_image_url_or_data(row.get("attachment_url")):
+                            s_img = row.get("attachment_url")
+
+                        st.write(f"ผู้รับผิดชอบ: **{row.get('assignee_name') or '-'}** | ผลงานที่ส่ง: {s_txt if s_txt else '-'}")
+                        if s_img:
+                            render_image_preview(s_img, caption="📸 ภาพผลงานที่ส่งตรวจรับ")
                         
                         c_bt1, c_bt2, c_bt3 = st.columns([1.5, 1.5, 1])
                         with c_bt1:
@@ -1677,6 +1848,7 @@ def render_task_board(curr_user, curr_username, is_commander):
                 "handoverReason": str(row.get("handover_reason") or ""),
                 "description": str(row.get("description") or ""),
                 "canDelete": bool(can_del),
+                "hasImage": bool(row.get("attachment_url")) or ("[ATTACHED_IMAGE:" in str(row.get("submission_note", ""))),
             })
             
         st.caption("💡 **วิธีใช้งาน:** คลิกลากการ์ดงาน (Drag & Drop) ข้ามช่องเพื่อเปลี่ยนสถานะได้ทันที หรือกดปุ่ม 📝 คืบหน้า / 🤝 ส่งต่องาน บนการ์ด")
@@ -1794,7 +1966,10 @@ def render_task_board(curr_user, curr_username, is_commander):
                         st.markdown(f"**ชื่องาน:** {row.get('title')}")
                         st.caption(f"รายละเอียด: {row.get('description') or 'ไม่มีรายละเอียด'}")
                         if row.get("attachment_url"):
-                            st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
+                            if is_image_url_or_data(row['attachment_url']):
+                                render_image_preview(row['attachment_url'], caption="รูปภาพแนบงาน")
+                            else:
+                                st.markdown(f"📎 [ไฟล์แนบ]({row['attachment_url']})")
 
                         st.divider()
 
@@ -2224,11 +2399,21 @@ def show_module3_kpi_dashboard():
                 type="primary"
             )
 
-            with st.expander("🔍 ดูความคืบหน้า / ลบงานในรายงานนี้ (กรณีพบงานที่สร้างผิดพลาด)"):
+            with st.expander("🔍 ดูความคืบหน้า / รายละเอียดผลงาน / ลบงานในรายงานนี้ (กรณีพบงานที่สร้างผิดพลาด)"):
                 for _, r in rep_df.iterrows():
                     c_h1, c_hp, c_h2 = st.columns([3.5, 1.2, 1.2])
                     with c_h1:
                         st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
+                        h_sub = r.get("submission_note") or ""
+                        h_img = None
+                        if "[ATTACHED_IMAGE:" in h_sub:
+                            h_img = h_sub.split("[ATTACHED_IMAGE:")[1].split("]")[0].strip()
+                        elif is_image_url_or_data(h_sub):
+                            h_img = h_sub
+                        elif is_image_url_or_data(r.get("attachment_url")):
+                            h_img = r.get("attachment_url")
+                        if h_img:
+                            render_image_preview(h_img, caption="📸 ภาพผลงานส่งมอบ")
                     with c_hp:
                         if st.button("📝 ความคืบหน้า", key=f"rep_prg_{r['task_id']}", use_container_width=True):
                             show_task_progress_dialog(r.to_dict(), curr_user)
