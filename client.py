@@ -4,13 +4,13 @@ import streamlit as st
 from supabase import create_client, Client
 
 @st.cache_resource
-def init_connection() -> Client:
+def init_connection():
     """สร้างการเชื่อมต่อกับ Supabase ครั้งเดียวและ Cache ไว้ใช้งาน"""
-    # 1. ตรวจสอบค่าจาก Environment Variables (สำหรับ Render / Cloud Deploy)
+    # 1. ตรวจสอบค่าจาก Environment Variables (สำหรับ Render)
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
 
-    # 2. หากไม่พบใน Env Vars ให้ดึงจาก st.secrets (สำหรับรันแบบ Local ด้วย Streamlit)
+    # 2. หากไม่พบ ให้ดึงจาก st.secrets (สำหรับ Local)
     if not url:
         try:
             url = st.secrets.get("SUPABASE_URL")
@@ -24,9 +24,13 @@ def init_connection() -> Client:
             key = None
 
     if not url or not key:
-        st.error("⚠️ ไม่พบการตั้งค่า SUPABASE_URL หรือ SUPABASE_KEY ใน Environment Variables หรือ secrets.toml")
-        st.stop()
+        return None
 
-    return create_client(url, key)
+    try:
+        return create_client(url.strip(), key.strip())
+    except Exception as e:
+        print(f"Error initializing Supabase client: {e}")
+        return None
 
+# กำหนดตัวแปร supabase เสมอเพื่อไม่ให้เกิด ImportError
 supabase = init_connection()

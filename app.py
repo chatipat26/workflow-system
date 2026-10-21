@@ -78,6 +78,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- Supabase Connection Check ---
+if supabase is None:
+    st.error('⚠️ ไม่สามารถเชื่อมต่อกับฐานข้อมูล Supabase ได้')
+    st.info('💡 วิธีแก้ไข: ไปที่ Render Dashboard > Environment > ตรวจสอบว่าใส่ SUPABASE_URL และ SUPABASE_KEY ถูกต้องแล้วกด Save Changes')
+    st.stop()
+
 # --- Session State Management ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
