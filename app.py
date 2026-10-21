@@ -2,26 +2,39 @@ import os
 import base64
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- Logo & Watermark Helper ---
-def get_file_base64(filepaths):
-    """แปลงไฟล์ภาพเป็น Base64 สำหรับแสดงผลและทำลายน้ำ (Watermark)"""
+# --- Logo & Watermark Helper (Cached เพื่อความเร็ว) ---
+@st.cache_data
+def get_file_base64_cached(filepath):
+    """แปลงไฟล์ภาพเป็น Base64 และแคชไว้ในหน่วยความจำ"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    for p in filepaths:
-        for candidate in [p, os.path.join(base_dir, p), os.path.join(base_dir, "..", p)]:
-            if os.path.exists(candidate):
-                try:
-                    with open(candidate, "rb") as f:
-                        return base64.b64encode(f.read()).decode()
-                except Exception:
-                    pass
+    for candidate in [filepath, os.path.join(base_dir, filepath), os.path.join(base_dir, "..", filepath)]:
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, "rb") as f:
+                    return base64.b64encode(f.read()).decode()
+            except Exception:
+                pass
     return ""
 
-LOGO_B64 = get_file_base64(["logo_thumb.jpg", "logo.jpg", "logo.png"])
-BG_WATERMARK_B64 = get_file_base64(["bg_watermark.png", "watermark.png"]) or LOGO_B64
+def get_watermark_b64():
+    for f in ["bg_watermark.png", "watermark.png", "logo.jpg"]:
+        b = get_file_base64_cached(f)
+        if b:
+            return b
+    return ""
+
+def get_logo_b64():
+    for f in ["logo_thumb.jpg", "logo.jpg", "logo.png"]:
+        b = get_file_base64_cached(f)
+        if b:
+            return b
+    return ""
+
+LOGO_B64 = get_logo_b64()
+BG_WATERMARK_B64 = get_watermark_b64()
 
 # --- Supabase Connection ---
 @st.cache_resource
@@ -77,6 +90,14 @@ st.markdown(f"""
     .main .block-container {{
         background: transparent !important;
     }}
+
+    /* ปิดหน้าจอโหลดสีเทาที่ทำให้ดูหน่วง (Disable Streamlit running dim overlay) */
+    [data-testid="stAppViewContainer"].stAppRunning,
+    div[data-testid="stAppViewContainer"] > section.main {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
+    }
 
     /* การ์ดงานและแถบสีฟ้า SVV */
     .kanban-card {{
@@ -215,10 +236,21 @@ def log_task_action(task_id, action, performed_by, details=""):
 # --- Authentication & Registration Page (โลโก้กะทัดรัด & ลายน้ำ Watermark บนแบคกราว) ---
 
 def show_auth_page():
-    # แสดงโลโก้ขนาดพอเหมาะ (115px) กึ่งกลางหน้าจอ พร้อมหัวเรื่อง
-    st.markdown(f"""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 20px; margin-bottom: 16px;">
-            <img src="data:image/jpeg;base64,{LOGO_B64}" width="115" height="115" style="border-radius: 50%; box-shadow: 0 4px 18px rgba(2, 132, 199, 0.22); margin-bottom: 12px; object-fit: contain;" />
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_file = None
+    for cand in ["logo_thumb.jpg", "logo.jpg", os.path.join(base_dir, "logo_thumb.jpg"), os.path.join(base_dir, "logo.jpg")]:
+        if os.path.exists(cand):
+            logo_file = cand
+            break
+
+    # แสดงโลโก้ขนาดพอเหมาะ (110px) กึ่งกลางหน้าจอ
+    c1, c2, c3 = st.columns([1.8, 1, 1.8])
+    with c2:
+        if logo_file:
+            st.image(logo_file, width=110)
+    
+    st.markdown("""
+        <div style="text-align: center; margin-top: 2px; margin-bottom: 1.25rem;">
             <h2 style="color: #0369a1; font-weight: 800; font-size: 1.55rem; margin: 0; letter-spacing: 0.5px;">TEAM WORKFLOW SVV</h2>
             <p style="color: #64748b; font-size: 0.92rem; font-weight: 500; margin-top: 4px; margin-bottom: 0;">ระบบจัดการงาน Kanban และประเมินผล KPI ทีมงาน SVV</p>
         </div>
@@ -240,29 +272,31 @@ def show_auth_page():
                         <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">SVV Portal</span>
                     </div>
                 """, unsafe_allow_html=True)
-                username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
-                password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
-                
-                if st.button("เข้าสู่ระบบ", use_container_width=True, type="primary"):
-                    if not username or not password:
-                        st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
-                    else:
-                        try:
-                            res = supabase.table("app_users").select("*").eq("username", username).eq("password_hash", password).execute()
-                            if res.data and len(res.data) > 0:
-                                user = res.data[0]
-                                is_approved = user.get("is_approved")
-                                if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
-                                    st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
+                with st.form("login_form", clear_on_submit=False):
+                    username = st.text_input("ชื่อผู้ใช้งาน (Username)", key="l_user")
+                    password = st.text_input("รหัสผ่าน (Password)", type="password", key="l_pass")
+                    
+                    submit_btn = st.form_submit_button("เข้าสู่ระบบ", use_container_width=True, type="primary")
+                    if submit_btn:
+                        if not username or not password:
+                            st.warning("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
+                        else:
+                            try:
+                                res = supabase.table("app_users").select("*").eq("username", username.strip()).eq("password_hash", password).execute()
+                                if res.data and len(res.data) > 0:
+                                    user = res.data[0]
+                                    is_approved = user.get("is_approved")
+                                    if is_approved is False and user.get("role") != "Admin" and user.get("username") != "admin":
+                                        st.warning("⏳ บัญชีของคุณอยู่ระหว่างรอ Admin อนุมัติและกำหนดยศ กรุณาติดต่อ Admin")
+                                    else:
+                                        st.session_state.logged_in = True
+                                        st.session_state.user = user
+                                        clear_all_cache()
+                                        st.rerun()
                                 else:
-                                    st.session_state.logged_in = True
-                                    st.session_state.user = user
-                                    clear_all_cache()
-                                    st.rerun()
-                            else:
-                                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาด: {e}")
+                                    st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                            except Exception as e:
+                                st.error(f"เกิดข้อผิดพลาด: {e}")
 
     with tab_register:
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -740,6 +774,7 @@ def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records
     return kpi_df
 
 def show_module3_kpi_dashboard():
+    import plotly.express as px
     curr_user = st.session_state.user
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
 
