@@ -796,12 +796,53 @@ def show_task_progress_dialog(task, curr_user):
 
     st.markdown("---")
 
-    # 2. ประวัติการรายงานความคืบหน้าและการปฏิบัติงานย้อนหลังทั้งหมด
+    # 2. ฟอร์มเพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่ (จัดวางไว้ด้านบนเพื่อความสะดวกรวดเร็ว)
+    if can_edit:
+        st.markdown("#### ➕ เพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่")
+        with st.form(f"add_progress_form_{tid}", clear_on_submit=True):
+            f_col1, f_col2 = st.columns([1.5, 2.5])
+            with f_col1:
+                log_type = st.selectbox("ประเภทบันทึก:", [
+                    "📌 รายงานความคืบหน้า",
+                    "📝 สรุปงาน / ส่งมอบงาน",
+                    "⚠️ ปัญหา / อุปสรรค",
+                    "💡 บันทึก / หมายเหตุทั่วไป"
+                ])
+            with f_col2:
+                st.caption(f"ผู้บันทึก: **@{curr_user.get('username')}** (มีสิทธิ์บันทึก/แก้ไข)")
+
+            progress_detail = st.text_area("รายละเอียดความคืบหน้า / รายงานสรุปงาน *:", placeholder="ระบุสิ่งที่ทำเสร็จแล้ว ขั้นตอนต่อไป ผลลัพธ์ หรือลิงก์เอกสาร...")
+
+            submitted = st.form_submit_button("💾 บันทึกรายงานความคืบหน้า", type="primary", use_container_width=True)
+
+            if submitted:
+                if not progress_detail.strip():
+                    st.error("กรุณาระบุรายละเอียดก่อนกดบันทึก")
+                else:
+                    try:
+                        clean_action = log_type.split(" ", 1)[1] if " " in log_type else log_type
+                        supabase.table("task_logs").insert({
+                            "task_id": tid,
+                            "action": clean_action,
+                            "performed_by": curr_user.get("username"),
+                            "details": progress_detail.strip()
+                        }).execute()
+                        clear_all_cache()
+                        st.success("✅ บันทึกรายงานความคืบหน้าสำเร็จแล้ว!")
+                        st.rerun(scope="fragment")
+                    except Exception as e:
+                        st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
+    else:
+        st.info(f"🔒 **สิทธิ์การบันทึก/แก้ไข:** เฉพาะผู้รับผิดชอบงานนี้ (`{assignee}`) และผู้มียศ **ระดับสั่งการ** เท่านั้น (คุณสามารถกดดูประวัติย้อนหลังได้ทั้งหมด)")
+
+    st.markdown("---")
+
+    # 3. ประวัติการรายงานความคืบหน้าและการปฏิบัติงานย้อนหลังทั้งหมด
     st.markdown("#### 📜 ประวัติความคืบหน้า & บันทึกงานย้อนหลังทั้งหมด")
     logs = fetch_task_logs(tid)
 
     if not logs:
-        st.info("ℹ️ ยังไม่มีบันทึกความคืบหน้าสำหรับงานนี้ สามารถเพิ่มบันทึกแรกได้ด้านล่าง")
+        st.info("ℹ️ ยังไม่มีบันทึกความคืบหน้าสำหรับงานนี้ สามารถเพิ่มบันทึกแรกได้ที่กล่องด้านบน")
     else:
         for l in logs:
             action = l.get("action", "บันทึก")
@@ -853,47 +894,6 @@ def show_task_progress_dialog(task, curr_user):
                                 supabase.table("task_logs").delete().eq("log_id", l["log_id"]).execute()
                                 st.success("ลบบันทึกเรียบร้อยแล้ว!")
                                 st.rerun(scope="fragment")
-
-    st.markdown("---")
-
-    # 3. ฟอร์มเพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่ (เฉพาะผู้รับผิดชอบงาน และ User ระดับสั่งการ)
-    if can_edit:
-        st.markdown("#### ➕ เพิ่มบันทึกรายงานความคืบหน้า / สรุปงานใหม่")
-        with st.form(f"add_progress_form_{tid}", clear_on_submit=True):
-            f_col1, f_col2 = st.columns([1.5, 2.5])
-            with f_col1:
-                log_type = st.selectbox("ประเภทบันทึก:", [
-                    "📌 รายงานความคืบหน้า",
-                    "📝 สรุปงาน / ส่งมอบงาน",
-                    "⚠️ ปัญหา / อุปสรรค",
-                    "💡 บันทึก / หมายเหตุทั่วไป"
-                ])
-            with f_col2:
-                st.caption(f"ผู้บันทึก: **@{curr_user.get('username')}** (มีสิทธิ์บันทึก/แก้ไข)")
-
-            progress_detail = st.text_area("รายละเอียดความคืบหน้า / รายงานสรุปงาน *:", placeholder="ระบุสิ่งที่ทำเสร็จแล้ว ขั้นตอนต่อไป ผลลัพธ์ หรือลิงก์เอกสาร...")
-
-            submitted = st.form_submit_button("💾 บันทึกรายงานความคืบหน้า", type="primary", use_container_width=True)
-
-            if submitted:
-                if not progress_detail.strip():
-                    st.error("กรุณาระบุรายละเอียดก่อนกดบันทึก")
-                else:
-                    try:
-                        clean_action = log_type.split(" ", 1)[1] if " " in log_type else log_type
-                        supabase.table("task_logs").insert({
-                            "task_id": tid,
-                            "action": clean_action,
-                            "performed_by": curr_user.get("username"),
-                            "details": progress_detail.strip()
-                        }).execute()
-                        clear_all_cache()
-                        st.success("✅ บันทึกรายงานความคืบหน้าสำเร็จแล้ว!")
-                        st.rerun(scope="fragment")
-                    except Exception as e:
-                        st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
-    else:
-        st.info(f"🔒 **สิทธิ์การบันทึก/แก้ไข:** เฉพาะผู้รับผิดชอบงานนี้ (`{assignee}`) และผู้มียศ **ระดับสั่งการ** เท่านั้น (คุณสามารถกดดูประวัติย้อนหลังได้ทั้งหมด)")
 
     st.write("")
     if st.button("✖️ ปิดหน้าต่าง (Close)", key=f"cls_dlg_{tid}", use_container_width=True):
