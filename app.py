@@ -69,122 +69,88 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS: โทนสีฟ้าเข้ากับโลโก้ SVV (Royal & Sky Blue) สบายตาและโหลดเร็ว
-st.markdown(f"""
+# Custom CSS: โทนสีฟ้าเข้ากับโลโก้ SVV (Royal & Sky Blue) สะอาดตา อ่านง่าย โหลดเร็ว
+st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
 
-    html, body, [class*="css"], .stApp {{
+    html, body, [class*="css"], .stApp {
         font-family: 'Sarabun', sans-serif !important;
-    }}
+    }
     
-    /* พื้นหลังหน้าจอหลักพร้อมลายน้ำ SVV (Watermark Background) */
+    /* พื้นหลังหน้าจอหลักสีสบายตา (Clean Soft Background) */
     [data-testid="stAppViewContainer"],
-    .stApp {{
+    .stApp {
         background-color: #f8fafc !important;
-        background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
-        background-repeat: no-repeat !important;
-        background-position: center 36% !important;
-        background-size: min(700px, 90vw) auto !important;
-        background-attachment: fixed !important;
-    }}
+    }
 
-    [data-testid="stAppViewContainer"] > section.main,
-    [data-testid="stMain"],
-    [data-testid="stHeader"],
-    .main .block-container,
-    div[data-testid="stAppViewBlockContainer"] {{
+    [data-testid="stHeader"] {
         background: transparent !important;
-        background-color: transparent !important;
-    }}
+    }
 
-    /* ปิดหน้าจอโหลดสีเทาที่ทำให้ดูหน่วง (Disable Streamlit running dim overlay) */
+    /* ปิดหน้าจอโหลดสีเทาที่ทำให้ดูหน่วง */
     [data-testid="stAppViewContainer"].stAppRunning,
-    div[data-testid="stAppViewContainer"] > section.main {{
+    div[data-testid="stAppViewContainer"] > section.main {
         opacity: 1 !important;
         filter: none !important;
         transition: none !important;
-    }}
+    }
 
     /* การ์ดงานและแถบสีฟ้า SVV */
-    .kanban-card {{
-        background-color: rgba(255, 255, 255, 0.90) !important;
+    .kanban-card {
+        background-color: #ffffff !important;
         border: 1px solid #bae6fd;
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 12px;
         box-shadow: 0 4px 10px rgba(2, 132, 199, 0.05);
         border-left: 5px solid #0284c7;
-    }}
+    }
     
     /* ปุ่มกดสีฟ้า SVV Gradient */
-    div[data-baseweb="button"] > button[kind="primary"] {{
+    div[data-baseweb="button"] > button[kind="primary"] {
         background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
         border: none !important;
         color: #ffffff !important;
         border-radius: 8px !important;
         box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25) !important;
         font-weight: 600 !important;
-    }}
+    }
 
-    div[data-baseweb="button"] > button {{
+    div[data-baseweb="button"] > button {
         border-radius: 8px !important;
         font-weight: 600 !important;
-    }}
+    }
 
     /* ป้ายสถานะงาน */
-    .badge-status {{
+    .badge-status {
         padding: 3px 8px;
         border-radius: 6px;
         font-size: 0.75rem;
         font-weight: 600;
         display: inline-block;
-    }}
-    .badge-todo {{ background-color: #f1f5f9; color: #475569; }}
-    .badge-progress {{ background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }}
-    .badge-review {{ background-color: #fef3c7; color: #92400e; }}
-    .badge-revision {{ background-color: #ffedd5; color: #9a3412; }}
-    .badge-done {{ background-color: #dcfce7; color: #166534; }}
-    .badge-overdue {{ background-color: #fee2e2; color: #991b1b; font-weight: 700; }}
-    .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
+    }
+    .badge-todo { background-color: #f1f5f9; color: #475569; }
+    .badge-progress { background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+    .badge-review { background-color: #fef3c7; color: #92400e; }
+    .badge-revision { background-color: #ffedd5; color: #9a3412; }
+    .badge-done { background-color: #dcfce7; color: #166534; }
+    .badge-overdue { background-color: #fee2e2; color: #991b1b; font-weight: 700; }
+    .badge-warning { background-color: #fef3c7; color: #b45309; font-weight: 700; }
 
-    div[data-testid="stVerticalBlockBorderWrapper"] {{
-        position: relative !important;
-        z-index: 1 !important;
-        background-color: rgba(255, 255, 255, 0.76) !important;
-        backdrop-filter: blur(6px) !important;
-        -webkit-backdrop-filter: blur(6px) !important;
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #ffffff !important;
         border: 1.5px solid #bae6fd !important;
         border-radius: 16px !important;
-        box-shadow: 0 10px 30px rgba(2, 132, 199, 0.12) !important;
-    }}
+        box-shadow: 0 6px 24px rgba(2, 132, 199, 0.08) !important;
+    }
 
     div[data-baseweb="input"] > div,
-    div[data-baseweb="base-input"] {{
-        background-color: rgba(255, 255, 255, 0.96) !important;
-    }}
+    div[data-baseweb="base-input"] {
+        background-color: #ffffff !important;
+    }
     </style>
 """, unsafe_allow_html=True)
-
-# Watermark Fixed DOM Overlay (แสดงผลแน่นอน 100% ไม่ถูกเลเยอร์ Streamlit บัง)
-if BG_WATERMARK_B64:
-    st.markdown(f"""
-        <div style="
-            position: fixed;
-            top: 48%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: min(680px, 88vw);
-            height: min(680px, 88vw);
-            background-image: url('data:image/png;base64,{BG_WATERMARK_B64}');
-            background-repeat: no-repeat;
-            background-position: center center;
-            background-size: contain;
-            pointer-events: none;
-            z-index: 0;
-            opacity: 0.92;
-        "></div>
-    """, unsafe_allow_html=True)
 
 # --- Supabase Connection Check ---
 if supabase is None:
@@ -473,8 +439,39 @@ def show_module1_commander_page():
                             log_task_action(res.data[0].get("task_id"), "สร้างงานใหม่", curr_user.get("username"), f"มอบหมายให้: {assigned_str}")
                         clear_all_cache()
                         st.success("✅ มอบหมายงานสำเร็จแล้ว!")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"เกิดข้อผิดพลาด: {e}")
+
+        st.markdown("---")
+        st.subheader("📋 รายการงานล่าสุดที่คุณสร้าง (ลบได้หากสร้างผิดพลาด)")
+        all_t = fetch_tasks()
+        if not all_t.empty and "creator_username" in all_t.columns:
+            if curr_user.get("role") != "Admin":
+                recent_t = all_t[all_t["creator_username"] == curr_user.get("username")].head(8)
+            else:
+                recent_t = all_t.head(8)
+
+            if not recent_t.empty:
+                for _, r in recent_t.iterrows():
+                    with st.container(border=True):
+                        c_inf, c_del = st.columns([4, 1.2])
+                        with c_inf:
+                            st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
+                            st.caption(f"กำหนดส่ง: {r.get('due_date') or '-'}")
+                        with c_del:
+                          with st.expander("🗑️ ลบงาน"):
+                            if st.button("ยืนยันลบ", key=f"m1_del_{r['task_id']}", type="primary", use_container_width=True):
+                                try:
+                                    supabase.table("task_logs").delete().eq("task_id", r["task_id"]).execute()
+                                except Exception:
+                                    pass
+                                supabase.table("tasks").delete().eq("task_id", r["task_id"]).execute()
+                                clear_all_cache()
+                                st.success("ลบงานสำเร็จ!")
+                                st.rerun()
+            else:
+                st.caption("ยังไม่มีรายการงานที่คุณสร้าง")
 
     with sub2:
         st.subheader("อนุมัติคำขอส่งต่องานระหว่างพนักงาน")
@@ -745,6 +742,22 @@ def render_task_board(curr_user, curr_username, is_commander):
                                 clear_all_cache()
                                 st.rerun()
 
+                        # ปุ่มลบงาน (Delete Task) สำหรับผู้สั่งการที่สร้างงาน หรือ Admin
+                        can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username)
+                        if can_del:
+                            st.divider()
+                            with st.expander("🗑️ ลบงานนี้ (เผื่อสร้างผิดพลาด)"):
+                                st.caption(f"ลบงาน: **{row.get('title')}**?")
+                                if st.button("❌ ยืนยันการลบงานถาวร", key=f"del_task_{row['task_id']}", type="primary", use_container_width=True):
+                                    try:
+                                        supabase.table("task_logs").delete().eq("task_id", row["task_id"]).execute()
+                                    except Exception:
+                                        pass
+                                    supabase.table("tasks").delete().eq("task_id", row["task_id"]).execute()
+                                    clear_all_cache()
+                                    st.success("ลบงานเรียบร้อยแล้ว!")
+                                    st.rerun()
+
     # 2. แสดงแยก 5 ช่องสถานะ (Kanban Columns)
     else:
         statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
@@ -757,6 +770,18 @@ def render_task_board(curr_user, curr_username, is_commander):
                     with st.container(border=True):
                         st.markdown(f"**{row.get('title')}**")
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
+                        can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username)
+                        if can_del_k:
+                            with st.expander("⚙️ ลบงาน"):
+                                if st.button("🗑️ ยืนยันลบ", key=f"k_del_{row['task_id']}", type="primary", use_container_width=True):
+                                    try:
+                                        supabase.table("task_logs").delete().eq("task_id", row["task_id"]).execute()
+                                    except Exception:
+                                        pass
+                                    supabase.table("tasks").delete().eq("task_id", row["task_id"]).execute()
+                                    clear_all_cache()
+                                    st.success("ลบงานสำเร็จ!")
+                                    st.rerun()
 
 # --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานเก่าเรียกดูย้อนหลัง ---
 
