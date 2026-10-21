@@ -72,7 +72,11 @@ st.set_page_config(
 # Custom CSS: โทนสีฟ้าเข้ากับโลโก้ SVV (Royal & Sky Blue) สบายตาและโหลดเร็ว
 st.markdown(f"""
     <style>
-    font-family: 'Sarabun', sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
+
+    html, body, [class*="css"], .stApp {{
+        font-family: 'Sarabun', sans-serif !important;
+    }}
     
     /* พื้นหลังหน้าจอหลักพร้อมลายน้ำ SVV (Watermark Background) */
     [data-testid="stAppViewContainer"],
@@ -145,6 +149,8 @@ st.markdown(f"""
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
     div[data-testid="stVerticalBlockBorderWrapper"] {{
+        position: relative !important;
+        z-index: 1 !important;
         background-color: rgba(255, 255, 255, 0.76) !important;
         backdrop-filter: blur(6px) !important;
         -webkit-backdrop-filter: blur(6px) !important;
@@ -159,6 +165,26 @@ st.markdown(f"""
     }}
     </style>
 """, unsafe_allow_html=True)
+
+# Watermark Fixed DOM Overlay (แสดงผลแน่นอน 100% ไม่ถูกเลเยอร์ Streamlit บัง)
+if BG_WATERMARK_B64:
+    st.markdown(f"""
+        <div style="
+            position: fixed;
+            top: 48%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(680px, 88vw);
+            height: min(680px, 88vw);
+            background-image: url('data:image/png;base64,{BG_WATERMARK_B64}');
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: contain;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.92;
+        "></div>
+    """, unsafe_allow_html=True)
 
 # --- Supabase Connection Check ---
 if supabase is None:
