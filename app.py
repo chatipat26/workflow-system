@@ -1,8 +1,34 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-from client import supabase
+from supabase import create_client, Client
+
+# --- Supabase Connection ---
+@st.cache_resource
+def get_supabase_client():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url:
+        try:
+            url = st.secrets.get("SUPABASE_URL")
+        except Exception:
+            url = None
+    if not key:
+        try:
+            key = st.secrets.get("SUPABASE_KEY")
+        except Exception:
+            key = None
+    if not url or not key:
+        return None
+    try:
+        return create_client(url.strip(), key.strip())
+    except Exception as e:
+        print(f"Supabase connection error: {e}")
+        return None
+
+supabase = get_supabase_client()
 
 # --- Configuration & Theme Setup ---
 st.set_page_config(
