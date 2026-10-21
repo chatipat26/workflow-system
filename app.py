@@ -210,13 +210,14 @@ KANBAN_DND_CSS = """
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px dashed #e2e8f0;
+  flex-wrap: nowrap;
 }
 .btn-action {
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.76rem;
+  padding: 4px 6px;
+  font-size: 0.73rem;
   font-weight: 600;
   color: #334155;
   cursor: pointer;
@@ -224,6 +225,8 @@ KANBAN_DND_CSS = """
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-action:hover {
   background: #e2e8f0;
@@ -236,18 +239,50 @@ KANBAN_DND_CSS = """
   border-color: #fca5a5;
 }
 .quick-move-sel {
-  font-size: 0.75rem;
+  font-size: 0.73rem;
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
-  padding: 3px 6px;
+  padding: 3px 5px;
   color: #475569;
   font-weight: 600;
   cursor: pointer;
   outline: none;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .quick-move-sel:hover {
   border-color: #0284c7;
+}
+.col-filter-box {
+  padding: 6px 6px 8px 6px;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.col-task-selector {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 0.79rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+.col-task-selector:focus {
+  border-color: #0284c7;
+  background: #ffffff;
+}
+.col-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
 }
 .empty-col {
   padding: 36px 12px;
@@ -296,10 +331,26 @@ export default function (component) {
         </div>
       `;
     } else {
+      if (colTasks.length > 1) {
+        html += `
+          <div class="col-filter-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:0.75rem; color:#475569; font-weight:700;">📂 เลือกงานที่จะดู:</span>
+              <span style="font-size:0.72rem; color:#0284c7; font-weight:700;">${colTasks.length} รายการ</span>
+            </div>
+            <select class="col-task-selector" data-col-id="${col.id}">
+              <option value="all">📋 แสดงทั้งหมด (${colTasks.length} งาน)</option>
+              ${colTasks.map(t => `<option value="${t.id}">📌 ${t.title.length > 25 ? t.title.substring(0, 25) + '...' : t.title}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      }
+      
+      html += `<div class="col-cards-container" data-col-id="${col.id}">`;
       colTasks.forEach(task => {
         let alertBadge = "";
         if (task.isOverdue) {
-          alertBadge = `<span style="background:#fee2e2; color:#b91c1c; border-radius:4px; padding:1px 5px; font-size:0.73rem; font-weight:700; border:1px solid #fecaca;">🚨 เกินกำหนด</span>`;
+          alertBadge = `<span style="background:#fee2e2; color:#b91c1c; border-radius:4px; padding:1px 5px; font-size:0.73rem; font-weight:700; border:1px solid #fecaca; white-space:nowrap;">🚨 เกินกำหนด</span>`;
         }
         let handoverBadge = "";
         if (task.handoverStatus === "Pending") {
@@ -308,16 +359,16 @@ export default function (component) {
         
         let priorityTag = "";
         if (task.priority === "ด่วนมาก") {
-          priorityTag = `<span style="background:#fee2e2; color:#b91c1c; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px;">🔥 ด่วนมาก</span>`;
+          priorityTag = `<span style="background:#fee2e2; color:#b91c1c; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap;">🔥 ด่วนมาก</span>`;
         } else if (task.priority === "ด่วน") {
-          priorityTag = `<span style="background:#fef3c7; color:#b45309; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px;">⚡ ด่วน</span>`;
+          priorityTag = `<span style="background:#fef3c7; color:#b45309; font-size:0.7rem; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap;">⚡ ด่วน</span>`;
         }
 
         html += `
           <div class="kanban-card" draggable="true" data-task-id="${task.id}" data-current-status="${task.status}">
             <div class="card-header-row">
               <div class="card-title">${task.title}</div>
-              <div style="display:flex; gap:4px; align-items:center;">
+              <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
                 ${priorityTag}
                 <span class="card-type-tag">${task.taskType || 'Project'}</span>
               </div>
@@ -332,7 +383,7 @@ export default function (component) {
               <button type="button" class="btn-action act-progress" data-id="${task.id}" title="บันทึกความคืบหน้า & สรุปผลงาน">
                 📝 คืบหน้า
               </button>
-              <div style="display:flex; gap:4px; align-items:center;">
+              <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
                 <button type="button" class="btn-action act-handover" data-id="${task.id}" title="ขอส่งต่องาน">
                   🤝 ส่งต่อ
                 </button>
@@ -350,6 +401,7 @@ export default function (component) {
           </div>
         `;
       });
+      html += `</div>`;
     }
     html += `
         </div>
@@ -468,6 +520,24 @@ export default function (component) {
           ts: Date.now()
         });
       }
+    });
+  });
+
+  // Column task filter selector (เมื่อมีมากกว่า 1 งานในช่อง)
+  board.querySelectorAll(".col-task-selector").forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      const selectedId = sel.value;
+      const colId = sel.dataset.colId;
+      const container = board.querySelector(`.col-cards-container[data-col-id="${colId}"]`);
+      if (!container) return;
+      const cardsInCol = container.querySelectorAll(".kanban-card");
+      cardsInCol.forEach(card => {
+        if (selectedId === "all" || card.dataset.taskId === selectedId) {
+          card.style.display = "flex";
+        } else {
+          card.style.display = "none";
+        }
+      });
     });
   });
 }
@@ -862,12 +932,13 @@ def task_matches_month(task_row, month_label):
     except Exception:
         return False
 
-@st.dialog("↩️ ความคิดเห็นต่อผลงาน & กำหนดวันส่งใหม่", width="medium")
-def show_return_task_dialog(task, curr_user):
+@st.dialog("🔄 บันทึกเหตุผล, ประเมินความพึงพอใจ & กำหนดวันส่งใหม่", width="medium")
+def show_return_task_dialog(task, curr_user, target_status_hint="In Progress"):
     tid = task.get("task_id")
     title = task.get("title", "")
     assignee = task.get("assignee_name", "-")
     curr_due = task.get("due_date")
+    curr_rating = task.get("satisfaction_rating") or 5
     try:
         def_due = pd.to_datetime(curr_due).date() if curr_due else datetime.today().date()
     except Exception:
@@ -877,16 +948,31 @@ def show_return_task_dialog(task, curr_user):
     st.caption(f"ผู้รับผิดชอบงาน: **{assignee}** | กำหนดส่งเดิม: **{curr_due or '-'}**")
     st.divider()
 
+    opts = [
+        "🚀 อนุมัติให้ดำเนินงานต่อ (ย้ายไป In Progress)",
+        "🔧 ส่งกลับไปแก้ไข (ย้ายไป Revision)",
+        "📋 ย้อนกลับไปวางแผนใหม่ (ย้ายไป To Do)"
+    ]
+    def_idx = 0
+    if target_status_hint == "Revision":
+        def_idx = 1
+    elif target_status_hint == "To Do":
+        def_idx = 2
+
     with st.form(f"form_return_{tid}"):
-        choice = st.radio(
-            "การตัดสินใจของผู้สั่งการ:", 
-            ["🚀 อนุมัติให้ทำงานต่อ (ย้ายไป In Progress)", "🔧 ส่งกลับไปแก้ไข (ย้ายไป Revision)"],
-            index=0
+        choice = st.radio("การตัดสินใจของผู้สั่งการ:", opts, index=def_idx)
+        
+        rating = st.slider(
+            "⭐ ประเมินความพึงพอใจต่อผลงานในรอบนี้ (1-5 ดาว) เพื่อคำนวณ KPI:",
+            min_value=1,
+            max_value=5,
+            value=int(curr_rating) if str(curr_rating).isdigit() and int(curr_rating) in [1, 2, 3, 4, 5] else 5
         )
+        st.caption(f"💡 คะแนนดาวนี้จะนำไปคำนวณในคะแนนความพึงพอใจ KPI ของพนักงาน ({rating} x 4 = {rating * 4} แต้ม)")
         
         feedback = st.text_area(
-            "💬 ข้อความแสดงความคิดเห็นต่อผลงาน (Feedback / สิ่งที่ต้องแก้ไข) *:",
-            placeholder="ระบุคำแนะนำ ข้อคิดเห็น หรือรายละเอียดที่ต้องการให้ดำเนินการต่อ..."
+            "💬 รายงานเหตุผล / ข้อคิดเห็นต่อผลงาน (Feedback) *:",
+            placeholder="ระบุเหตุผล เช่น งานเฟสแรกผ่านแล้ว ให้ดำเนินงานต่อในเฟสถัดไป, หรือจุดที่ต้องปรับปรุงแก้ไข..."
         )
         
         new_due = st.date_input(
@@ -895,24 +981,33 @@ def show_return_task_dialog(task, curr_user):
             min_value=datetime.today().date()
         )
         
-        submitted = st.form_submit_button("💾 ยืนยันการส่งงานกลับ", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("💾 ยืนยันบันทึกและย้ายสถานะงาน", type="primary", use_container_width=True)
         
         if submitted:
             if not feedback.strip():
-                st.error("กรุณากรอกข้อความแสดงความคิดเห็นต่อผลงานก่อนกดยืนยัน")
+                st.error("กรุณากรอกรายงานเหตุผลหรือข้อคิดเห็นต่อผลงานก่อนกดยืนยัน")
             else:
-                target_status = "In Progress" if "In Progress" in choice else "Revision"
+                if "In Progress" in choice:
+                    target_status = "In Progress"
+                    action_title = "อนุมัติให้ดำเนินงานต่อ"
+                elif "To Do" in choice:
+                    target_status = "To Do"
+                    action_title = "ย้อนกลับไป To Do"
+                else:
+                    target_status = "Revision"
+                    action_title = "ส่งกลับไปแก้ไข"
+                    
                 try:
                     supabase.table("tasks").update({
                         "status": target_status,
                         "due_date": new_due.strftime("%Y-%m-%d"),
+                        "satisfaction_rating": rating,
                         "completed_at": None,
                         "is_ontime": None,
                         "submission_note": feedback.strip()
                     }).eq("task_id", tid).execute()
                     
-                    action_title = "อนุมัติให้ทำงานต่อ" if target_status == "In Progress" else "ส่งกลับไปแก้ไข"
-                    log_msg = f"{feedback.strip()} (กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')})"
+                    log_msg = f"{feedback.strip()} (กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')}) [ประเมินความพึงพอใจ: {rating} ดาว]"
                     supabase.table("task_logs").insert({
                         "task_id": tid,
                         "action": action_title,
@@ -921,7 +1016,7 @@ def show_return_task_dialog(task, curr_user):
                     }).execute()
                     
                     clear_all_cache()
-                    st.success(f"✅ ส่งงานกลับไปยัง {target_status} เรียบร้อยแล้ว! กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')}")
+                    st.success(f"✅ บันทึกและย้ายงานไปยัง {target_status} เรียบร้อยแล้ว! (ประเมิน {rating} ดาว, กำหนดวันส่งใหม่: {new_due.strftime('%Y-%m-%d')})")
                     st.rerun()
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาด: {e}")
@@ -1447,8 +1542,8 @@ def show_module1_commander_page():
                             if st.button("🏆 ตรวจรับงานสำเร็จ (Done)", key=f"dn_{row['task_id']}", use_container_width=True, type="primary"):
                                 show_approve_done_dialog(row.to_dict(), curr_user)
                         with c_bt2:
-                            if st.button("↩️ ส่งกลับไป In Progress / แก้ไข", key=f"rv_{row['task_id']}", use_container_width=True):
-                                show_return_task_dialog(row.to_dict(), curr_user)
+                            if st.button("↩️ ส่งกลับ / ทำต่อ / ประเมินผล", key=f"rv_{row['task_id']}", use_container_width=True):
+                                show_return_task_dialog(row.to_dict(), curr_user, target_status_hint="In Progress")
                         with c_bt3:
                             if st.button("📝 ความคืบหน้า", key=f"m1_rev_prg_{row['task_id']}", use_container_width=True):
                                 show_task_progress_dialog(row.to_dict(), curr_user)
@@ -1601,23 +1696,23 @@ def render_task_board(curr_user, curr_username, is_commander):
                     t_rows = df[df["task_id"] == tid] if not df.empty and "task_id" in df.columns else pd.DataFrame()
                     if not t_rows.empty:
                         t_dict = t_rows.iloc[0].to_dict()
-                        if from_s == "In Review" and to_s in ["In Progress", "Revision"]:
+                        if to_s in ["In Progress", "Revision", "To Do"]:
                             if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
-                                show_return_task_dialog(t_dict, curr_user)
+                                show_return_task_dialog(t_dict, curr_user, target_status_hint=to_s)
+                            elif from_s == "To Do" and to_s == "In Progress":
+                                supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", tid).execute()
+                                log_task_action(tid, "เริ่มดำเนินงาน", curr_username, "ลากการ์ดงานไป In Progress (Drag & Drop)")
+                                clear_all_cache()
+                                st.rerun()
                             else:
-                                st.warning("⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถส่งกลับงานจาก In Review เพื่อแก้ไขได้")
-                        elif from_s == "In Review" and to_s == "Done":
+                                st.warning("⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถประเมินผลและย้ายสถานะนี้ได้")
+                        elif to_s == "Done":
                             if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin":
                                 show_approve_done_dialog(t_dict, curr_user)
                             else:
                                 st.warning("⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถตรวจรับงานและย้ายไป Done ได้")
                         elif from_s == "In Progress" and to_s == "In Review":
                             show_submit_work_dialog(t_dict, curr_user)
-                        elif from_s == "To Do" and to_s == "In Progress":
-                            supabase.table("tasks").update({"status": "In Progress"}).eq("task_id", tid).execute()
-                            log_task_action(tid, "เริ่มดำเนินงาน", curr_username, "ลากการ์ดงานไป In Progress (Drag & Drop)")
-                            clear_all_cache()
-                            st.rerun()
                         else:
                             if is_commander or curr_user.get("role") == "Admin" or curr_username == "admin" or t_dict.get("creator_username") == curr_username:
                                 supabase.table("tasks").update({"status": to_s}).eq("task_id", tid).execute()
@@ -1813,13 +1908,13 @@ def render_task_board(curr_user, curr_username, is_commander):
                             if status == "In Review":
                                 if st.button("🏆 ตรวจรับผ่าน (ย้ายไป Done)", key=f"c_dn_{row['task_id']}", type="primary", use_container_width=True):
                                     show_approve_done_dialog(row.to_dict(), curr_user)
-                                if st.button("↩️ ส่งกลับ In Progress / แก้ไข", key=f"c_rt_{row['task_id']}", use_container_width=True):
-                                    show_return_task_dialog(row.to_dict(), curr_user)
+                                if st.button("↩️ ส่งกลับ / ทำต่อ / ประเมินผล", key=f"c_rt_{row['task_id']}", use_container_width=True):
+                                    show_return_task_dialog(row.to_dict(), curr_user, target_status_hint="In Progress")
                             all_stats = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done']
                             new_s = st.selectbox("ย้ายไปสถานะ:", all_stats, index=all_stats.index(status), key=f"cmd_s_{row['task_id']}")
                             if st.button("อัปเดตสถานะงาน", key=f"cmd_upd_{row['task_id']}", use_container_width=True):
-                                if new_s in ["In Progress", "Revision"] and status == "In Review":
-                                    show_return_task_dialog(row.to_dict(), curr_user)
+                                if new_s in ["In Progress", "Revision", "To Do"] and status in ["In Review", "In Progress", "Revision"]:
+                                    show_return_task_dialog(row.to_dict(), curr_user, target_status_hint=new_s)
                                 elif new_s == "Done":
                                     show_approve_done_dialog(row.to_dict(), curr_user)
                                 else:
@@ -1865,12 +1960,17 @@ def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records
                     elif t.get("is_ontime") is False:
                         late_c += 1
                     r = t.get("satisfaction_rating")
-                    if r and r > 0:
-                        ratings.append(r)
+                    if r is not None and str(r).strip() != "":
+                        try:
+                            r_val = float(r)
+                            if r_val > 0:
+                                ratings.append(r_val)
+                        except Exception:
+                            pass
 
-        # หากยังไม่มีงานที่เสร็จ (d_count == 0) จะยังไม่มีคะแนนดาวประเมิน และไม่ได้รับแต้มความพึงพอใจล่วงหน้า
-        if d_count > 0:
-            avg_r = sum(ratings) / len(ratings) if ratings else 5.0
+        # คิดคะแนนความพึงพอใจสำหรับคำนวณ KPI ทันทีที่มีการประเมินดาว
+        if ratings:
+            avg_r = sum(ratings) / len(ratings)
             satisfaction_pts = avg_r * 4
         else:
             avg_r = 0.0
@@ -1888,7 +1988,7 @@ def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records
             "done_tasks": d_count,
             "ontime_count": ontime_c,
             "late_count": late_c,
-            "avg_rating": round(avg_r, 1) if d_count > 0 else 0.0,
+            "avg_rating": round(avg_r, 1) if ratings else 0.0,
             "manual_points": man_pts,
             "total_kpi": tot_kpi
         })
