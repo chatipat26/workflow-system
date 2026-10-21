@@ -20,14 +20,14 @@ def get_file_base64_cached(filepath):
     return ""
 
 def get_watermark_b64():
-    for f in ["bg_watermark.png", "watermark.png", "logo.jpg"]:
+    for f in ["svv_watermark_stamp.png", "bg_watermark.png", "watermark.png"]:
         b = get_file_base64_cached(f)
         if b:
             return b
     return ""
 
 def get_logo_b64():
-    for f in ["logo_thumb.jpg", "logo.jpg", "logo.png"]:
+    for f in ["svv_logo_header.png", "svv_logo_transparent.png", "logo_thumb.jpg", "logo.jpg"]:
         b = get_file_base64_cached(f)
         if b:
             return b
@@ -142,11 +142,15 @@ st.markdown(f"""
     .badge-warning {{ background-color: #fef3c7; color: #b45309; font-weight: 700; }}
 
     div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background: rgba(255, 255, 255, 0.90) !important;
-        backdrop-filter: blur(8px) !important;
-        border: 1px solid #bae6fd !important;
-        border-radius: 14px !important;
-        box-shadow: 0 6px 20px rgba(2, 132, 199, 0.08) !important;
+        position: relative !important;
+        background-color: rgba(255, 255, 255, 0.94) !important;
+        background-image: url('data:image/png;base64,{BG_WATERMARK_B64}') !important;
+        background-repeat: no-repeat !important;
+        background-position: right -15px bottom -15px !important;
+        background-size: 200px 200px !important;
+        border: 1.5px solid #bae6fd !important;
+        border-radius: 16px !important;
+        box-shadow: 0 8px 24px rgba(2, 132, 199, 0.08) !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -238,7 +242,7 @@ def log_task_action(task_id, action, performed_by, details=""):
 def show_auth_page():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     logo_file = None
-    for cand in ["logo_thumb.jpg", "logo.jpg", os.path.join(base_dir, "logo_thumb.jpg"), os.path.join(base_dir, "logo.jpg")]:
+    for cand in ["svv_logo_header.png", "svv_logo_transparent.png", "logo_thumb.jpg", "logo.jpg", os.path.join(base_dir, "svv_logo_header.png"), os.path.join(base_dir, "logo.jpg")]:
         if os.path.exists(cand):
             logo_file = cand
             break
@@ -266,10 +270,14 @@ def show_auth_page():
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.container(border=True):
-                st.markdown("""
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
-                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">🔒 เข้าสู่ระบบ</h3>
-                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">SVV Portal</span>
+                st.markdown(f"""
+                    <div style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
+                        <img src="data:image/png;base64,{LOGO_B64}" width="42" height="42" style="border-radius: 50%; filter: drop-shadow(0 2px 6px rgba(2, 132, 199, 0.25)); object-fit: contain;" />
+                        <div style="flex-grow: 1;">
+                            <h3 style="color: #0369a1; margin: 0; font-size: 1.22rem; font-weight: 800; line-height: 1.2;">🔒 เข้าสู่ระบบ</h3>
+                            <p style="color: #64748b; margin: 0; font-size: 0.8rem; font-weight: 500;">TEAM WORKFLOW SVV</p>
+                        </div>
+                        <span style="font-size: 0.78rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 20px; font-weight: 700; border: 1px solid #bae6fd;">SVV Portal</span>
                     </div>
                 """, unsafe_allow_html=True)
                 with st.form("login_form", clear_on_submit=False):
@@ -302,10 +310,14 @@ def show_auth_page():
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.container(border=True):
-                st.markdown("""
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
-                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">📝 สมัครสมาชิกใหม่</h3>
-                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">ลงทะเบียน</span>
+                st.markdown(f"""
+                    <div style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
+                        <img src="data:image/png;base64,{LOGO_B64}" width="42" height="42" style="border-radius: 50%; filter: drop-shadow(0 2px 6px rgba(2, 132, 199, 0.25)); object-fit: contain;" />
+                        <div style="flex-grow: 1;">
+                            <h3 style="color: #0369a1; margin: 0; font-size: 1.22rem; font-weight: 800; line-height: 1.2;">📝 ลงทะเบียนพนักงานใหม่</h3>
+                            <p style="color: #64748b; margin: 0; font-size: 0.8rem; font-weight: 500;">TEAM WORKFLOW SVV</p>
+                        </div>
+                        <span style="font-size: 0.78rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 20px; font-weight: 700; border: 1px solid #bae6fd;">ลงทะเบียน</span>
                     </div>
                 """, unsafe_allow_html=True)
                 with st.form("reg_form", clear_on_submit=True):
@@ -344,10 +356,14 @@ def show_auth_page():
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.container(border=True):
-                st.markdown("""
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #e0f2fe; padding-bottom: 8px; margin-bottom: 16px;">
-                        <h3 style="color: #0369a1; margin: 0; font-weight: 700;">🔑 ตั้งรหัสผ่านใหม่</h3>
-                        <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-weight: 600;">กู้คืนรหัส</span>
+                st.markdown(f"""
+                    <div style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 18px;">
+                        <img src="data:image/png;base64,{LOGO_B64}" width="42" height="42" style="border-radius: 50%; filter: drop-shadow(0 2px 6px rgba(2, 132, 199, 0.25)); object-fit: contain;" />
+                        <div style="flex-grow: 1;">
+                            <h3 style="color: #0369a1; margin: 0; font-size: 1.22rem; font-weight: 800; line-height: 1.2;">🔑 ตั้งรหัสผ่านใหม่</h3>
+                            <p style="color: #64748b; margin: 0; font-size: 0.8rem; font-weight: 500;">TEAM WORKFLOW SVV</p>
+                        </div>
+                        <span style="font-size: 0.78rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 20px; font-weight: 700; border: 1px solid #bae6fd;">กู้คืนรหัส</span>
                     </div>
                 """, unsafe_allow_html=True)
                 with st.form("reset_form"):
@@ -1014,7 +1030,7 @@ else:
     # แสดงโลโก้ใน Sidebar
     base_dir = os.path.dirname(os.path.abspath(__file__))
     logo_file = None
-    for cand in ["logo.jpg", os.path.join(base_dir, "logo.jpg"), "logo.png"]:
+    for cand in ["svv_logo_header.png", "logo.jpg", os.path.join(base_dir, "svv_logo_header.png"), os.path.join(base_dir, "logo.jpg")]:
         if os.path.exists(cand):
             logo_file = cand
             break
