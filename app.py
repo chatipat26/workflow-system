@@ -93,11 +93,11 @@ st.markdown(f"""
 
     /* ปิดหน้าจอโหลดสีเทาที่ทำให้ดูหน่วง (Disable Streamlit running dim overlay) */
     [data-testid="stAppViewContainer"].stAppRunning,
-    div[data-testid="stAppViewContainer"] > section.main {
+    div[data-testid="stAppViewContainer"] > section.main {{
         opacity: 1 !important;
         filter: none !important;
         transition: none !important;
-    }
+    }}
 
     /* การ์ดงานและแถบสีฟ้า SVV */
     .kanban-card {{
