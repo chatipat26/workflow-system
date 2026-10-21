@@ -193,6 +193,20 @@ def fetch_kpi_adjustments():
 def clear_all_cache():
     st.cache_data.clear()
 
+def delete_task_record(task_id, task_title=""):
+    """ลบงานออกจากฐานข้อมูล ทั้ง task_logs และ tasks พร้อมล้างแคชเพื่อให้จำนวนงานและคะแนน KPI ลดลงทันที"""
+    try:
+        supabase.table("task_logs").delete().eq("task_id", task_id).execute()
+    except Exception as e:
+        print(f"Log delete error: {e}")
+    try:
+        supabase.table("tasks").delete().eq("task_id", task_id).execute()
+        clear_all_cache()
+        return True
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการลบงาน: {e}")
+        return False
+
 def parse_roles(roles_val):
     if not roles_val:
         return ["ปฏิบัติงาน"]
@@ -447,10 +461,11 @@ def show_module1_commander_page():
         st.subheader("📋 รายการงานล่าสุดที่คุณสร้าง (ลบได้หากสร้างผิดพลาด)")
         all_t = fetch_tasks()
         if not all_t.empty and "creator_username" in all_t.columns:
-            if curr_user.get("role") != "Admin":
-                recent_t = all_t[all_t["creator_username"] == curr_user.get("username")].head(8)
+            show_all_m1 = st.checkbox("🔍 แสดงงานทั้งหมดในระบบ (สำหรับผู้สั่งการ/Admin)", value=False, key="m1_show_all")
+            if curr_user.get("role") == "Admin" or show_all_m1:
+                recent_t = all_t.head(15)
             else:
-                recent_t = all_t.head(8)
+                recent_t = all_t[all_t["creator_username"] == curr_user.get("username")].head(15)
 
             if not recent_t.empty:
                 for _, r in recent_t.iterrows():
@@ -458,18 +473,13 @@ def show_module1_commander_page():
                         c_inf, c_del = st.columns([4, 1.2])
                         with c_inf:
                             st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
-                            st.caption(f"กำหนดส่ง: {r.get('due_date') or '-'}")
+                            st.caption(f"ผู้สั่งการ: @{r.get('creator_username') or '-'} | กำหนดส่ง: {r.get('due_date') or '-'}")
                         with c_del:
                           with st.expander("🗑️ ลบงาน"):
                             if st.button("ยืนยันลบ", key=f"m1_del_{r['task_id']}", type="primary", use_container_width=True):
-                                try:
-                                    supabase.table("task_logs").delete().eq("task_id", r["task_id"]).execute()
-                                except Exception:
-                                    pass
-                                supabase.table("tasks").delete().eq("task_id", r["task_id"]).execute()
-                                clear_all_cache()
-                                st.success("ลบงานสำเร็จ!")
-                                st.rerun()
+                                if delete_task_record(r["task_id"], r.get("title", "")):
+                                    st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                                    st.rerun()
             else:
                 st.caption("ยังไม่มีรายการงานที่คุณสร้าง")
 
@@ -597,7 +607,6 @@ def show_module2_kanban_page():
     st.header("📋 โมดูลที่ 2: กระดานงาน (Task Board)")
     render_task_board(curr_user, curr_username, is_commander)
 
-@st.fragment
 def render_task_board(curr_user, curr_username, is_commander):
     df = fetch_tasks()
 
@@ -742,21 +751,16 @@ def render_task_board(curr_user, curr_username, is_commander):
                                 clear_all_cache()
                                 st.rerun()
 
-                        # ปุ่มลบงาน (Delete Task) สำหรับผู้สั่งการที่สร้างงาน หรือ Admin
-                        can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username)
+                        # ปุ่มลบงาน (Delete Task) อนุญาตให้ Admin, ผู้สั่งการ, ผู้สร้างงาน หรือผู้รับผิดชอบงานลบได้หากสร้างผิดพลาด
+                        can_del = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
                         if can_del:
                             st.divider()
-                            with st.expander("🗑️ ลบงานนี้ (เผื่อสร้างผิดพลาด)"):
-                                st.caption(f"ลบงาน: **{row.get('title')}**?")
+                            with st.expander("🗑️ ลบงานนี้ (กรณีสร้างผิดพลาด / ไม่ได้ทำ)"):
+                                st.caption(f"ต้องการลบงาน: **{row.get('title')}** หรือไม่? ระบบจะตัดยอดงานนี้ออกจากสถิติและลดคะแนน KPI ทันที")
                                 if st.button("❌ ยืนยันการลบงานถาวร", key=f"del_task_{row['task_id']}", type="primary", use_container_width=True):
-                                    try:
-                                        supabase.table("task_logs").delete().eq("task_id", row["task_id"]).execute()
-                                    except Exception:
-                                        pass
-                                    supabase.table("tasks").delete().eq("task_id", row["task_id"]).execute()
-                                    clear_all_cache()
-                                    st.success("ลบงานเรียบร้อยแล้ว!")
-                                    st.rerun()
+                                    if delete_task_record(row["task_id"], row.get("title", "")):
+                                        st.success("✅ ลบงานเรียบร้อยแล้ว! ลดยอดจำนวนงานและคะแนน KPI ทันที")
+                                        st.rerun()
 
     # 2. แสดงแยก 5 ช่องสถานะ (Kanban Columns)
     else:
@@ -770,18 +774,13 @@ def render_task_board(curr_user, curr_username, is_commander):
                     with st.container(border=True):
                         st.markdown(f"**{row.get('title')}**")
                         st.caption(f"👤 {row.get('assignee_name') or '-'}\n📅 {row.get('due_date') or '-'}")
-                        can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username)
+                        can_del_k = is_commander or (curr_user.get("role") == "Admin") or (curr_username == "admin") or (row.get("creator_username") == curr_username) or (curr_username in str(row.get("assignee_name", "")))
                         if can_del_k:
                             with st.expander("⚙️ ลบงาน"):
                                 if st.button("🗑️ ยืนยันลบ", key=f"k_del_{row['task_id']}", type="primary", use_container_width=True):
-                                    try:
-                                        supabase.table("task_logs").delete().eq("task_id", row["task_id"]).execute()
-                                    except Exception:
-                                        pass
-                                    supabase.table("tasks").delete().eq("task_id", row["task_id"]).execute()
-                                    clear_all_cache()
-                                    st.success("ลบงานสำเร็จ!")
-                                    st.rerun()
+                                    if delete_task_record(row["task_id"], row.get("title", "")):
+                                        st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                                        st.rerun()
 
 # --- Module 3: แดชบอร์ดคะแนน KPI & รายงานผลงานเก่าเรียกดูย้อนหลัง ---
 
@@ -812,11 +811,18 @@ def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records
                     if r and r > 0:
                         ratings.append(r)
 
-        avg_r = sum(ratings) / len(ratings) if ratings else 5.0
+        # หากยังไม่มีงานที่เสร็จ (d_count == 0) จะยังไม่มีคะแนนดาวประเมิน และไม่ได้รับแต้มความพึงพอใจล่วงหน้า
+        if d_count > 0:
+            avg_r = sum(ratings) / len(ratings) if ratings else 5.0
+            satisfaction_pts = avg_r * 4
+        else:
+            avg_r = 0.0
+            satisfaction_pts = 0.0
+
         user_adjs = [a for a in adjustments if a.get("username") == uname]
         man_pts = sum(float(a.get("points", 0)) for a in user_adjs)
         
-        tot_kpi = max(0, round((d_count * 5) + (ontime_c * 10) - (late_c * 5) + (avg_r * 4) + man_pts, 1))
+        tot_kpi = max(0, round((d_count * 5) + (ontime_c * 10) - (late_c * 5) + satisfaction_pts + man_pts, 1))
 
         kpi_records.append({
             "username": uname,
@@ -825,7 +831,7 @@ def compute_kpi_summary_df(tasks_records, operators_records, adjustments_records
             "done_tasks": d_count,
             "ontime_count": ontime_c,
             "late_count": late_c,
-            "avg_rating": round(avg_r, 1),
+            "avg_rating": round(avg_r, 1) if d_count > 0 else 0.0,
             "manual_points": man_pts,
             "total_kpi": tot_kpi
         })
@@ -859,6 +865,22 @@ def show_module3_kpi_dashboard():
     m3.metric("🔍 รอตรวจรับ", in_rev)
     m4.metric("✅ เสร็จสิ้น", done_c)
 
+    # จัดการและลบงานในระบบโดยตรง (เพื่อให้สามารถตัดยอดงานที่สร้างผิดพลาดได้ทันที)
+    if not tasks_df.empty:
+        with st.expander("🛠️ ตรวจสอบ / ลบงานในระบบ (หากสร้างผิดพลาดหรือไม่ได้ทำ เพื่อตัดยอดจำนวนงานออกทันที)"):
+            st.caption("💡 เมื่อลบงาน งานจะถูกตัดออกจากระบบและลดจำนวนงานในแดชบอร์ด KPI ทันที")
+            for _, r in tasks_df.iterrows():
+                with st.container(border=True):
+                    c_info, c_del = st.columns([4, 1.2])
+                    with c_info:
+                        st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: **{r.get('assignee_name') or '-'}**")
+                        st.caption(f"ผู้สั่งการ: @{r.get('creator_username') or '-'} | กำหนดส่ง: {r.get('due_date') or '-'}")
+                    with c_del:
+                        if st.button("🗑️ ยืนยันลบงานนี้", key=f"m3_del_{r['task_id']}", type="primary", use_container_width=True):
+                            if delete_task_record(r["task_id"], r.get("title", "")):
+                                st.success(f"✅ ลบงาน '{r.get('title')}' สำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว")
+                                st.rerun()
+
     st.divider()
 
     tab_kpi, tab_history = st.tabs([
@@ -867,6 +889,7 @@ def show_module3_kpi_dashboard():
     ])
 
     with tab_kpi:
+        st.caption("💡 **เกณฑ์การคำนวณคะแนน KPI:** งานที่เสร็จแล้ว (Done) +5 แต้ม | ส่งตรงเวลา +10 แต้ม | ส่งล่าช้า -5 แต้ม | คะแนนความพึงพอใจ (1-5 ดาว) x 4 แต้ม | แต้มพิเศษ (+/-) *(หมายเหตุ: หากยังไม่มีงานที่ทำเสร็จ จะยังไม่ได้รับคะแนนดาวความพึงพอใจ)*")
         tasks_records = tasks_df.to_dict('records') if not tasks_df.empty else []
         kpi_df = compute_kpi_summary_df(tasks_records, operators, adjustments)
 
@@ -994,6 +1017,17 @@ def show_module3_kpi_dashboard():
                 mime="text/csv",
                 type="primary"
             )
+
+            with st.expander("🗑️ ลบงานในรายงานนี้ (กรณีพบงานที่สร้างผิดพลาด / ไม่ได้ทำ)"):
+                for _, r in rep_df.iterrows():
+                    c_h1, c_h2 = st.columns([4, 1.2])
+                    with c_h1:
+                        st.markdown(f"**{r.get('title')}** | สถานะ: `{r.get('status')}` | ผู้รับผิดชอบ: {r.get('assignee_name') or '-'}")
+                    with c_h2:
+                        if st.button("ยืนยันลบ", key=f"rep_del_{r['task_id']}", use_container_width=True):
+                            if delete_task_record(r["task_id"], r.get("title", "")):
+                                st.success("✅ ลบงานสำเร็จ! ลดยอดจำนวนงานแล้ว")
+                                st.rerun()
 
 # --- Admin Panel: จัดการผู้ใช้งาน ---
 
