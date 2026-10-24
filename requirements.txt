@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+psycopg[binary]
 supabase
 PyJWT
 pydantic
@@ -7,5 +8,3 @@ python-multipart
 pandas
 plotly
 Pillow
-psycopg[binary]
-streamlit
