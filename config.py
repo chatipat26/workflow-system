@@ -34,6 +34,7 @@ def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
 
     return default
 
+DATABASE_URL = get_secret("DATABASE_URL")
 SUPABASE_URL = get_secret("SUPABASE_URL")
 SUPABASE_KEY = get_secret("SUPABASE_KEY")
 JWT_SECRET = get_secret("JWT_SECRET", "svv-team-workflow-secret-jwt-key-2026")

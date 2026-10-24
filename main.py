@@ -24,11 +24,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Connect to Supabase
-if not config.SUPABASE_URL or not config.SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be configured in secrets.toml or environment variables.")
-
-supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+# Connect to Database (Dokploy PostgreSQL via DATABASE_URL or Supabase)
+if config.DATABASE_URL:
+    from pg_client import PgClient
+    print("Connecting via direct PostgreSQL (DATABASE_URL)...")
+    supabase = PgClient(config.DATABASE_URL)
+elif config.SUPABASE_URL and config.SUPABASE_KEY:
+    supabase = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+    print("Connecting via Supabase API...")
+else:
+    raise RuntimeError("Either DATABASE_URL or SUPABASE_URL and SUPABASE_KEY must be configured.")
 
 # Static files setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
