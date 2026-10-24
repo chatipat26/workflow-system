@@ -40,9 +40,23 @@ def get_logo_b64():
 LOGO_B64 = get_logo_b64()
 BG_WATERMARK_B64 = get_watermark_b64()
 
-# --- Supabase Connection ---
+# --- Supabase / PostgreSQL Connection ---
 @st.cache_resource
 def get_supabase_client():
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        try:
+            db_url = st.secrets.get("DATABASE_URL")
+        except Exception:
+            db_url = None
+    if db_url:
+        try:
+            from pg_client import PgClient
+            return PgClient(db_url.strip())
+        except Exception as e:
+            print(f"PostgreSQL connection error: {e}")
+            return None
+
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url:
@@ -1155,7 +1169,9 @@ def show_task_progress_dialog(task, curr_user):
         if is_commander:
             st.write("")
             if st.button("✏️ แก้ไขข้อมูลและรายละเอียดงานนี้ (สิทธิ์ระดับสั่งการ)", key=f"dlg_edt_btn_{tid}", use_container_width=True):
-                show_edit_task_dialog(task, curr_user)
+                st.session_state["trigger_edit_dialog"] = True
+                st.session_state["trigger_edit_dialog_task"] = task
+                st.rerun()
 
     st.markdown("---")
 
@@ -2071,6 +2087,12 @@ def show_module1_commander_page():
 def show_module2_kanban_page():
     curr_user = st.session_state.user
     curr_username = curr_user.get("username")
+
+    if st.session_state.get("trigger_edit_dialog"):
+        edit_target = st.session_state.pop("trigger_edit_dialog_task", None)
+        st.session_state["trigger_edit_dialog"] = False
+        if edit_target:
+            show_edit_task_dialog(edit_target, curr_user)
     is_commander = user_has_role(curr_user, "ระดับสั่งการ")
 
     st.header("📋 โมดูลที่ 2: กระดานงาน (Task Board)")

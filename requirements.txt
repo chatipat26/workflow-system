@@ -7,4 +7,5 @@ python-multipart
 pandas
 plotly
 Pillow
+psycopg[binary]
 streamlit
