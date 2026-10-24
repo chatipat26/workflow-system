@@ -1,0 +1,62 @@
+/* Custom SVV styling and Kanban helpers */
+
+body {
+  font-family: 'Sarabun', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Drag and Drop visual feedback */
+.kanban-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  cursor: grab;
+}
+.kanban-card:active {
+  cursor: grabbing;
+}
+.kanban-card.dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+.drag-over {
+  border: 2px dashed #0284c7 !important;
+  background-color: #f0f9ff !important;
+}
+
+/* Active navigation item */
+.nav-item.active {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-weight: 700;
+}
+
+/* Badge styles */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-todo { background: #f1f5f9; color: #475569; }
+.badge-progress { background: #e0f2fe; color: #0284c7; }
+.badge-review { background: #fef3c7; color: #b45309; }
+.badge-revision { background: #ffe4e6; color: #e11d48; }
+.badge-done { background: #dcfce7; color: #15803d; }
+.badge-overdue { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }

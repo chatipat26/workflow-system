@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  svv-workflow:
+    build: .
+    container_name: svv-workflow
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
