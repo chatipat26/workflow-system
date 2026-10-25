@@ -751,28 +751,36 @@ function renderManageTasksTable() {
     return;
   }
 
-  container.innerHTML = list.map(t => `
+  container.innerHTML = list.map(t => {
+    const kpiBadge = (t.task_kpi_points !== null && t.task_kpi_points !== undefined)
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${t.task_kpi_points >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">💎 KPI ${t.task_kpi_points > 0 ? '+' : ''}${t.task_kpi_points}</span>`
+      : '';
+    return `
     <div class="bg-slate-50/70 hover:bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3 transition">
       <div class="space-y-1 overflow-hidden">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-bold text-xs text-slate-800">${escapeHtml(t.title)}</span>
           <span class="badge-status ${getBadgeClass(t.status)} text-[10px]">${t.status}</span>
           <span class="px-2 py-0.5 bg-slate-200/70 text-slate-700 rounded text-[10px] font-bold">${escapeHtml(t.task_type || 'Project')}</span>
+          ${kpiBadge}
           ${getDueAlertBadgeHtml(t)}
         </div>
         <p class="text-[11px] text-slate-500">
           👤 ผู้ปฏิบัติงาน: <strong class="text-slate-700">${escapeHtml(t.assignee_name || '-')}</strong> |
-          👑 ผู้สั่งการ: <strong class="text-slate-700">@${escapeHtml(t.creator_username || '-')}</strong> |
+          👑 ผู้สั่งการ: <strong class="text-slate-700">@${escapeHtml(t.creator_username || '-')}</strong>
+          ${t.approved_by ? ` | ✅ ผู้ตรวจรับ: <strong class="text-emerald-700">@${escapeHtml(t.approved_by)}</strong>` : ''} |
           📅 กำหนดส่ง: <strong>${t.due_date || '-'}</strong>
         </p>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        ${(t.status === 'In Review' || t.status === 'Done') ? `<button onclick="openApproveModal('${t.task_id}')" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition">${t.status === 'Done' ? '⚖️ ให้คะแนน KPI' : '🏆 ตรวจรับงาน'}</button>` : ''}
         <button onclick="openEditModal('${t.task_id}')" class="px-3 py-1.5 bg-white hover:bg-svv-50 text-svv-700 border border-slate-200 rounded-xl text-xs font-bold transition">✏️ แก้ไขงาน</button>
         <button onclick="openProgressModal('${t.task_id}')" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition">📝 คืบหน้า</button>
         <button onclick="handleDeleteTask('${t.task_id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition">🗑️ ลบงาน</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderHandoverRequests() {
@@ -826,8 +834,8 @@ function renderReviewTasks() {
     return;
   }
   container.innerHTML = reviews.map(t => {
-    const otBadge = t.is_ontime === true ? '<span class="badge-status badge-done text-[10px]">🟢 ส่งตรงเวลา (+10 แต้ม)</span>' :
-                    t.is_ontime === false ? '<span class="badge-status badge-overdue text-[10px]">🔴 ส่งเกินกำหนด (-5 แต้ม)</span>' : '';
+    const otBadge = t.is_ontime === true ? '<span class="badge-status badge-done text-[10px]">🟢 ส่งตรงเวลา</span>' :
+                    t.is_ontime === false ? '<span class="badge-status badge-overdue text-[10px]">🔴 ส่งเกินกำหนด</span>' : '';
     const noteRaw = t.submission_note || '';
     const cleanNote = noteRaw.split('[ATTACHED_IMAGE:')[0].trim();
     let subAttach = null;
@@ -856,7 +864,7 @@ function renderReviewTasks() {
         ${t.attachment_url ? renderAttachmentPreviewHtml(t.attachment_url, 'ไฟล์แนบโจทย์งาน') : ''}
         ${subAttach ? renderAttachmentPreviewHtml(subAttach, 'ไฟล์ผลงานที่ส่งมอบ') : ''}
         <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-          <button onclick="openApproveModal('${t.task_id}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition">🏆 ตรวจรับงานสำเร็จ (Done)</button>
+          <button onclick="openApproveModal('${t.task_id}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition">🏆 ตรวจรับงาน & ให้คะแนน KPI</button>
           <button onclick="openReturnModal('${t.task_id}')" class="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition">🔄 ส่งกลับ / ทำต่อ / ประเมินผล</button>
           <button onclick="openProgressModal('${t.task_id}')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">📝 ความคืบหน้า</button>
           <button onclick="openEditModal('${t.task_id}')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">✏️ แก้ไขงาน</button>
@@ -900,6 +908,7 @@ async function handleDirectKpiAdjust(e) {
     });
     showToast(res.message || 'บันทึกการปรับคะแนนเรียบร้อยแล้ว', 'success');
     document.getElementById('directAdjReason').value = '';
+    await loadAllData();
     await renderKpiDashboard();
   } catch (err) {
     showToast(err.message, 'error');
@@ -1136,10 +1145,18 @@ function renderKanbanCard(t, colTasks = [], index = 0, colKey = '', activeId = '
           <span class="truncate font-semibold text-slate-700" title="${escapeHtml(t.assignee_name || '-')}">👤 ${escapeHtml(t.assignee_name || '-')}</span>
           <span class="shrink-0">📅 ${t.due_date || '-'}</span>
         </div>
-        <div class="flex items-center justify-between text-slate-400">
+        <div class="flex items-center justify-between text-slate-400 flex-wrap gap-1">
           <span>👑 สั่งโดย: @${escapeHtml(t.creator_username || t.requester_name || '-')}</span>
-          ${t.satisfaction_rating ? `<span class="text-amber-500 font-bold">⭐ ${t.satisfaction_rating}</span>` : ''}
+          <div class="flex items-center gap-1.5">
+            ${t.satisfaction_rating ? `<span class="text-amber-500 font-bold">⭐ ${t.satisfaction_rating}</span>` : ''}
+            ${(t.task_kpi_points !== null && t.task_kpi_points !== undefined) ? `<span class="px-1.5 py-0.5 rounded-full font-extrabold text-[9.5px] ${t.task_kpi_points >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">💎 KPI ${t.task_kpi_points > 0 ? '+' : ''}${t.task_kpi_points}</span>` : ''}
+          </div>
         </div>
+        ${t.approved_by ? `
+          <div class="text-[10px] text-emerald-700 font-bold">
+            ✅ ผู้ตรวจรับ/ให้คะแนน: @${escapeHtml(t.approved_by)}
+          </div>
+        ` : ''}
       </div>
 
       <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] gap-1 flex-wrap">
@@ -1152,14 +1169,17 @@ function renderKanbanCard(t, colTasks = [], index = 0, colKey = '', activeId = '
           ${t.can_edit ? `<button onclick="openEditModal('${t.task_id}')" title="แก้ไขงาน" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">✏️</button>` : ''}
           ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" title="ลบงาน" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold">🗑️</button>` : ''}
         </div>
-        <div class="flex gap-1">
+        <div class="flex gap-1 flex-wrap">
           ${(t.status === 'To Do' || t.status === 'Revision') ? `<button onclick="quickMoveTask('${t.task_id}', 'In Progress')" class="px-2 py-1 bg-svv-600 hover:bg-svv-700 text-white font-bold rounded-lg text-[10px] transition">▶️ เริ่มทำ</button>` : ''}
           ${t.status === 'In Progress' ? `<button onclick="openSubmitModal('${t.task_id}')" class="px-2 py-1 bg-svv-50 hover:bg-svv-100 text-svv-700 font-bold rounded-lg text-[10px] border border-svv-200 transition">📤 ส่งงาน</button>` : ''}
           ${t.status === 'In Review' && isComm ? `
             <button onclick="openApproveModal('${t.task_id}')" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] transition">🏆 ตรวจรับ</button>
             <button onclick="openReturnModal('${t.task_id}')" class="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold rounded-lg text-[10px] transition">↩️</button>
           ` : ''}
-          ${t.status === 'Done' && isComm ? `<button onclick="openReturnModal('${t.task_id}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-[10px] transition">🔄 ส่งกลับ</button>` : ''}
+          ${t.status === 'Done' && isComm ? `
+            <button onclick="openApproveModal('${t.task_id}')" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold rounded-lg text-[10px] transition">⚖️ ให้คะแนน KPI</button>
+            <button onclick="openReturnModal('${t.task_id}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-[10px] transition">🔄 ส่งกลับ</button>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -1183,11 +1203,13 @@ function renderCompactList() {
           <span class="badge-status ${getBadgeClass(t.status)} text-[10px]">${t.status}</span>
           ${getPriorityBadgeHtml(t.priority)}
           <span class="px-1.5 py-0.5 bg-sky-50 text-svv-700 rounded text-[10px] font-bold">${escapeHtml(t.task_type || 'Project')}</span>
+          ${(t.task_kpi_points !== null && t.task_kpi_points !== undefined) ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${t.task_kpi_points >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">💎 KPI ${t.task_kpi_points > 0 ? '+' : ''}${t.task_kpi_points}</span>` : ''}
           ${getDueAlertBadgeHtml(t)}
         </div>
         <p class="text-[11px] text-slate-500">
           👤 ผู้รับผิดชอบ: <strong>${escapeHtml(t.assignee_name || '-')}</strong> |
-          👑 สั่งโดย: <strong>@${escapeHtml(t.creator_username || '-')}</strong> |
+          👑 สั่งโดย: <strong>@${escapeHtml(t.creator_username || '-')}</strong>
+          ${t.approved_by ? ` | ✅ ผู้ตรวจรับ: <strong class="text-emerald-700">@${escapeHtml(t.approved_by)}</strong>` : ''} |
           📅 กำหนดส่ง: ${t.due_date || '-'}
         </p>
       </div>
@@ -1195,6 +1217,7 @@ function renderCompactList() {
         ${(t.status === 'To Do' || t.status === 'Revision') ? `<button onclick="quickMoveTask('${t.task_id}', 'In Progress')" class="px-2.5 py-1.5 bg-svv-600 text-white rounded-xl text-xs font-bold">▶️ เริ่มทำ</button>` : ''}
         ${t.status === 'In Progress' ? `<button onclick="openSubmitModal('${t.task_id}')" class="px-2.5 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">📤 ส่งงาน</button>` : ''}
         ${t.status === 'In Review' && isComm ? `<button onclick="openApproveModal('${t.task_id}')" class="px-2.5 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">🏆 ตรวจรับ</button>` : ''}
+        ${t.status === 'Done' && isComm ? `<button onclick="openApproveModal('${t.task_id}')" class="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold">⚖️ ให้คะแนน KPI</button>` : ''}
         <button onclick="openProgressModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">📝 ความคืบหน้า</button>
         ${t.status !== 'Done' ? `<button onclick="openHandoverModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">🤝 ส่งต่อ</button>` : ''}
         ${t.can_edit ? `<button onclick="openEditModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">✏️ แก้ไข</button>` : ''}
@@ -1417,6 +1440,7 @@ async function handleDeleteKpiAdjustment(adjId) {
   try {
     const res = await api(`/api/kpi/adjustments/${adjId}`, { method: 'DELETE' });
     showToast(res.message || 'ลบรายการปรับคะแนนแล้ว', 'success');
+    await loadAllData();
     await renderKpiDashboard();
   } catch (err) {
     showToast(err.message, 'error');
@@ -1460,13 +1484,11 @@ function getTaskThaiMonthYear(t) {
 }
 
 function calcTaskKpiScore(t) {
-  if (t.status !== 'Done') return 0;
-  let score = 5;
-  if (t.is_ontime === true) score += 10;
-  else if (t.is_ontime === false) score -= 5;
-  const r = parseFloat(t.satisfaction_rating || 0);
-  if (r > 0) score += r * 4;
-  return score;
+  if (t.task_kpi_points !== null && t.task_kpi_points !== undefined) {
+    const p = parseFloat(t.task_kpi_points);
+    return isNaN(p) ? 0 : p;
+  }
+  return 0;
 }
 
 function getFilteredHistoryTasks() {
@@ -1512,7 +1534,7 @@ function renderHistoryReport() {
   const lateCount = doneList.filter(t => t.is_ontime === false).length;
   const rated = doneList.filter(t => parseFloat(t.satisfaction_rating || 0) > 0);
   const avgRtNum = rated.length ? Math.round((rated.reduce((s, t) => s + parseFloat(t.satisfaction_rating), 0) / rated.length) * 10) / 10 : 0.0;
-  const totalKpiPts = (cntDone * 5) + (ontimeCount * 10) - (lateCount * 5) + Math.trunc(avgRtNum * 4);
+  const totalKpiPts = Math.round(filtered.reduce((s, t) => s + calcTaskKpiScore(t), 0) * 10) / 10;
 
   if (cardsEl) {
     cardsEl.innerHTML = `
@@ -1533,8 +1555,8 @@ function renderHistoryReport() {
         <p class="text-lg font-extrabold text-amber-600 mt-0.5">${avgRtNum > 0 ? avgRtNum + '/5' : '-'}</p>
       </div>
       <div class="bg-white p-3.5 rounded-2xl border border-svv-200 shadow-sm">
-        <span class="text-[11px] font-bold text-svv-700">💎 แต้ม KPI งานนี้</span>
-        <p class="text-lg font-extrabold text-svv-700 mt-0.5">${totalKpiPts >= 0 ? '+' + totalKpiPts : totalKpiPts}</p>
+        <span class="text-[11px] font-bold text-svv-700">💎 แต้ม KPI จากงาน</span>
+        <p class="text-lg font-extrabold text-svv-700 mt-0.5">${totalKpiPts > 0 ? '+' + totalKpiPts : totalKpiPts}</p>
       </div>
     `;
   }
@@ -1544,25 +1566,31 @@ function renderHistoryReport() {
     return;
   }
 
+  const isComm = Boolean(state.user?.is_commander || state.user?.is_admin);
   tbody.innerHTML = filtered.map(t => {
-    const ontimeTxt = t.is_ontime === true ? '🟢 ตรงเวลา (+10)' : (t.is_ontime === false ? '🔴 ล่าช้า (-5)' : '⚪ ปกติ');
+    const ontimeTxt = t.is_ontime === true ? '🟢 ตรงเวลา' : (t.is_ontime === false ? '🔴 ล่าช้า' : '⚪ ปกติ');
     const starTxt = t.satisfaction_rating ? `⭐ ${t.satisfaction_rating}/5` : '-';
     const pts = calcTaskKpiScore(t);
+    const ptsTxt = (t.task_kpi_points !== null && t.task_kpi_points !== undefined) ? (pts > 0 ? `+${pts}` : `${pts}`) : '0';
     return `
       <tr class="hover:bg-slate-50 transition">
         <td class="py-2.5 px-3 font-bold text-slate-800">${escapeHtml(t.title)}</td>
         <td class="py-2.5 px-3">${escapeHtml(t.assignee_name || '-')}</td>
-        <td class="py-2.5 px-3 text-slate-500">@${escapeHtml(t.creator_username || '-')}</td>
+        <td class="py-2.5 px-3 text-slate-500">
+          <div>👑 สั่ง: @${escapeHtml(t.creator_username || '-')}</div>
+          ${t.approved_by ? `<div class="text-[10px] text-emerald-700 font-bold">✅ ตรวจรับ: @${escapeHtml(t.approved_by)}</div>` : ''}
+        </td>
         <td class="py-2.5 px-2">${escapeHtml(t.task_type || 'Project')}</td>
         <td class="py-2.5 px-2">${t.due_date || '-'}</td>
         <td class="py-2.5 px-2">${t.completed_at ? t.completed_at.slice(0, 10) : '-'}</td>
         <td class="py-2.5 px-2">${escapeHtml(getTaskThaiMonthYear(t))}</td>
         <td class="py-2.5 px-2 font-semibold">${ontimeTxt}</td>
         <td class="py-2.5 px-2 font-bold text-amber-600">${starTxt}</td>
-        <td class="py-2.5 px-2 text-right font-extrabold text-svv-700">${pts >= 0 ? '+' + pts : pts}</td>
+        <td class="py-2.5 px-2 text-right font-extrabold ${pts >= 0 ? 'text-emerald-700' : 'text-rose-600'}">${ptsTxt}</td>
         <td class="py-2.5 px-2"><span class="badge-status ${getBadgeClass(t.status)} text-[10px]">${t.status}</span></td>
         <td class="py-2.5 px-3">
           <div class="flex items-center gap-1">
+            ${isComm && t.status === 'Done' ? `<button onclick="openApproveModal('${t.task_id}')" title="แก้ไขคะแนน KPI งานนี้" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold">⚖️ KPI</button>` : ''}
             <button onclick="openProgressModal('${t.task_id}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold">📝 ความคืบหน้า</button>
             ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-bold">🗑️</button>` : ''}
           </div>
@@ -1579,8 +1607,8 @@ function downloadHistoryCsv() {
     return;
   }
   const headers = [
-    'ชื่องาน', 'รายละเอียด', 'ผู้รับผิดชอบงาน', 'ผู้สั่งการ', 'ประเภท',
-    'กำหนดส่ง', 'วันที่ส่งจริง', 'ประจำเดือน', 'ผลการส่ง', 'คะแนนดาว', 'แต้ม KPI', 'สถานะ'
+    'ชื่องาน', 'รายละเอียด', 'ผู้รับผิดชอบงาน', 'ผู้สั่งการ', 'ผู้ตรวจรับ/ให้คะแนน', 'ประเภท',
+    'กำหนดส่ง', 'วันที่ส่งจริง', 'ประจำเดือน', 'ผลการส่ง', 'คะแนนดาว', 'แต้ม KPI ที่ได้รับ', 'สถานะ'
   ];
   const rows = filtered.map(t => {
     const ontimeTxt = t.status !== 'Done' ? 'กำลังดำเนินการ' : (t.is_ontime === true ? 'ส่งทันเวลา' : 'ส่งล่าช้า');
@@ -1589,6 +1617,7 @@ function downloadHistoryCsv() {
       (t.description || '').replace(/\r?\n/g, ' '),
       t.assignee_name || '',
       t.creator_username || '',
+      t.approved_by || '',
       t.task_type || 'Project',
       t.due_date || '',
       t.completed_at ? t.completed_at.slice(0, 16) : '',
@@ -1764,7 +1793,9 @@ async function openProgressModal(taskId) {
     </div>
     <p class="text-slate-600">
       👤 ผู้รับผิดชอบ: <strong>${escapeHtml(task.assignee_name || '-')}</strong> |
-      👑 ผู้สั่งการ: <strong>@${escapeHtml(task.creator_username || task.requester_name || '-')}</strong> |
+      👑 ผู้สั่งการ: <strong>@${escapeHtml(task.creator_username || task.requester_name || '-')}</strong>
+      ${task.approved_by ? ` | ✅ ผู้ตรวจรับ/ให้คะแนน: <strong class="text-emerald-700">@${escapeHtml(task.approved_by)}</strong>` : ''}
+      ${(task.task_kpi_points !== null && task.task_kpi_points !== undefined) ? ` | <strong class="${task.task_kpi_points >= 0 ? 'text-emerald-700' : 'text-rose-600'}">💎 KPI ${task.task_kpi_points > 0 ? '+' : ''}${task.task_kpi_points} แต้ม</strong>` : ''} |
       📅 กำหนดส่ง: <strong>${task.due_date || '-'}</strong>
     </p>
     <div class="p-2.5 bg-white rounded-xl border border-slate-200/80 text-slate-700 whitespace-pre-line">
@@ -1988,12 +2019,17 @@ async function handleConfirmSubmitWork(e) {
   }
 }
 
-// 3. Approve Modal
+// 3. Approve Modal (Inspector sets KPI score directly)
 function openApproveModal(taskId) {
   state.activeTaskId = taskId;
   const task = state.tasks.find(t => String(t.task_id) === String(taskId));
   if (!task) return;
-  const otBadge = task.is_ontime === true ? '🟢 ส่งตรงเวลา (+10 แต้ม)' : '🔴 ส่งเกินกำหนด (-5 แต้ม)';
+
+  let isOntime = task.is_ontime;
+  if (isOntime === null || isOntime === undefined) {
+    isOntime = task.is_overdue !== true;
+  }
+  const otBadge = isOntime ? '🟢 ส่งตรงเวลา' : '🔴 ส่งเกินกำหนด';
   const subRaw = task.submission_note || '';
   const subClean = subRaw.split('[ATTACHED_IMAGE:')[0].trim();
   let subAttach = null;
@@ -2003,15 +2039,126 @@ function openApproveModal(taskId) {
 
   document.getElementById('approveTaskDetails').innerHTML = `
     <p class="font-bold text-slate-800">📌 ${escapeHtml(task.title)}</p>
-    <p class="text-slate-500">ผู้รับผิดชอบ: <strong>${escapeHtml(task.assignee_name || '-')}</strong> | ประเภท: <strong>${escapeHtml(task.task_type || 'Project')}</strong></p>
+    <p class="text-slate-500">ผู้รับผิดชอบ: <strong>${escapeHtml(task.assignee_name || '-')}</strong> | ผู้สั่งการ: <strong>@${escapeHtml(task.creator_username || '-')}</strong> | ประเภท: <strong>${escapeHtml(task.task_type || 'Project')}</strong></p>
     <p class="text-slate-700 font-bold">${otBadge}</p>
     ${subClean ? `<div class="p-2.5 bg-white rounded-xl border border-slate-200 text-slate-700"><strong>สรุปงานที่ส่ง:</strong> ${escapeHtml(subClean)}</div>` : ''}
     ${subAttach ? renderAttachmentPreviewHtml(subAttach, 'ไฟล์ผลงานที่ส่งมอบ') : ''}
   `;
-  document.getElementById('approveRating').value = 5;
-  document.getElementById('ratingValLabel').innerText = '5 ดาว (20 แต้ม KPI)';
+
+  // Inspector badge
+  const inspectorBadge = document.getElementById('approveInspectorBadge');
+  if (inspectorBadge && state.user) {
+    inspectorBadge.innerText = `👑 ผู้ให้คะแนน: ${state.user.fullname || state.user.username} (@${state.user.username})`;
+  }
+
+  // Assignees checkboxes (all checked by default)
+  const assigneesList = (task.assignee_name || '').split(',').map(s => s.trim()).filter(Boolean);
+  const assigneesContainer = document.getElementById('approveAssigneesList');
+  if (assigneesContainer) {
+    assigneesContainer.innerHTML = assigneesList.map(u => {
+      const opObj = state.operators.find(o => o.username === u);
+      const label = opObj ? `${opObj.fullname || u} (@${u})` : `@${u}`;
+      return `
+        <label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-svv-200 text-xs font-semibold text-slate-700 cursor-pointer">
+          <input type="checkbox" class="approve-assignee-chk rounded text-svv-600" value="${escapeHtml(u)}" checked onchange="updateApproveKpiPreview()">
+          <span>${escapeHtml(label)}</span>
+        </label>
+      `;
+    }).join('');
+  }
+
+  // Pre-fill existing rating & KPI points if task was already evaluated, otherwise default to 5 stars & +1 KPI point
+  const initRating = task.satisfaction_rating && task.satisfaction_rating > 0 ? task.satisfaction_rating : 5;
+  document.getElementById('approveRating').value = initRating;
+  document.getElementById('ratingValLabel').innerText = `⭐ ${initRating} ดาว`;
+
+  if (task.task_kpi_points !== null && task.task_kpi_points !== undefined) {
+    const existingPts = parseFloat(task.task_kpi_points);
+    if (existingPts > 0) {
+      document.getElementById('approveKpiPoints').value = existingPts;
+      setApproveKpiAction('add');
+    } else if (existingPts < 0) {
+      document.getElementById('approveKpiPoints').value = Math.abs(existingPts);
+      setApproveKpiAction('deduct');
+    } else {
+      document.getElementById('approveKpiPoints').value = 1;
+      setApproveKpiAction('none');
+    }
+  } else {
+    document.getElementById('approveKpiPoints').value = 1;
+    setApproveKpiAction('add');
+  }
+
   document.getElementById('approveFeedback').value = '';
+  updateApproveKpiPreview();
   openModal('modalApprove');
+}
+
+function setApproveKpiAction(action) {
+  const actInput = document.getElementById('approveKpiAction');
+  if (actInput) actInput.value = action;
+
+  const btnAdd = document.getElementById('btnKpiActAdd');
+  const btnDed = document.getElementById('btnKpiActDeduct');
+  const btnNone = document.getElementById('btnKpiActNone');
+  const ptsBox = document.getElementById('approveKpiPointsBox');
+  const signPrefix = document.getElementById('approveKpiSignPrefix');
+
+  if (btnAdd) {
+    btnAdd.className = action === 'add'
+      ? 'py-2 px-2 rounded-xl text-xs font-extrabold border-2 border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm transition'
+      : 'py-2 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-emerald-50 transition';
+  }
+  if (btnDed) {
+    btnDed.className = action === 'deduct'
+      ? 'py-2 px-2 rounded-xl text-xs font-extrabold border-2 border-rose-500 bg-rose-50 text-rose-700 shadow-sm transition'
+      : 'py-2 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-rose-50 transition';
+  }
+  if (btnNone) {
+    btnNone.className = action === 'none'
+      ? 'py-2 px-2 rounded-xl text-xs font-extrabold border-2 border-slate-500 bg-slate-100 text-slate-800 shadow-sm transition'
+      : 'py-2 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition';
+  }
+  if (ptsBox) {
+    ptsBox.classList.toggle('hidden', action === 'none');
+  }
+  if (signPrefix) {
+    if (action === 'deduct') {
+      signPrefix.innerText = '-';
+      signPrefix.className = 'px-3 py-2 rounded-xl bg-rose-100 text-rose-700 font-extrabold text-sm';
+    } else {
+      signPrefix.innerText = '+';
+      signPrefix.className = 'px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-extrabold text-sm';
+    }
+  }
+  updateApproveKpiPreview();
+}
+
+function setApproveKpiPreset(val) {
+  const ptsEl = document.getElementById('approveKpiPoints');
+  if (ptsEl) ptsEl.value = val;
+  updateApproveKpiPreview();
+}
+
+function updateApproveKpiPreview() {
+  const previewEl = document.getElementById('approveKpiSummaryPreview');
+  if (!previewEl) return;
+  const action = document.getElementById('approveKpiAction')?.value || 'add';
+  const pts = parseFloat(document.getElementById('approveKpiPoints')?.value || '0');
+  const inspector = state.user?.username || 'admin';
+  const checkedUsers = Array.from(document.querySelectorAll('.approve-assignee-chk:checked')).map(el => `@${el.value}`);
+  const targetsTxt = checkedUsers.length ? checkedUsers.join(', ') : 'ไม่มีผู้ถูกเลือก';
+
+  if (action === 'none' || !pts || pts <= 0) {
+    previewEl.className = 'text-[11px] font-bold text-slate-600 bg-white/90 px-3 py-1.5 rounded-lg border border-slate-200';
+    previewEl.innerText = '⚪ ตรวจรับงานเข้าสู่ Done โดยไม่มีการเพิ่มหรือหักแต้ม KPI ในรอบนี้';
+  } else if (action === 'add') {
+    previewEl.className = 'text-[11px] font-bold text-emerald-700 bg-white/90 px-3 py-1.5 rounded-lg border border-emerald-200';
+    previewEl.innerText = `✅ ระบบจะเพิ่มคะแนน KPI +${pts} แต้ม ให้ ${targetsTxt} โดยระบุ @${inspector} (ผู้ตรวจรับ) เป็นผู้ให้คะแนนอัตโนมัติ`;
+  } else {
+    previewEl.className = 'text-[11px] font-bold text-rose-700 bg-white/90 px-3 py-1.5 rounded-lg border border-rose-200';
+    previewEl.innerText = `🔻 ระบบจะหักคะแนน KPI -${pts} แต้ม จาก ${targetsTxt} โดยระบุ @${inspector} (ผู้ตรวจรับ) เป็นผู้หักคะแนนอัตโนมัติ`;
+  }
 }
 
 async function handleConfirmApprove(e) {
@@ -2019,21 +2166,46 @@ async function handleConfirmApprove(e) {
   if (!state.activeTaskId) return;
   const rating = parseInt(document.getElementById('approveRating').value, 10);
   const feedback = document.getElementById('approveFeedback').value.trim();
+  const kpiAction = document.getElementById('approveKpiAction')?.value || 'add';
+  const kpiPoints = parseFloat(document.getElementById('approveKpiPoints')?.value || '0');
+  const targetAssignees = Array.from(document.querySelectorAll('.approve-assignee-chk:checked')).map(el => el.value);
+
+  if (kpiAction !== 'none' && kpiPoints > 0 && targetAssignees.length === 0) {
+    showToast('⚠️ กรุณาติ๊กเลือกผู้ปฏิบัติงานที่จะรับคะแนน KPI อย่างน้อย 1 คน หรือเลือก "ไม่ปรับแต้ม (0)"', 'warning');
+    return;
+  }
 
   try {
     const res = await api(`/api/tasks/${state.activeTaskId}/approve`, {
       method: 'POST',
-      body: JSON.stringify({ satisfaction_rating: rating, feedback })
+      body: JSON.stringify({
+        satisfaction_rating: rating,
+        feedback,
+        kpi_action: kpiAction,
+        kpi_points: kpiAction === 'none' ? 0 : kpiPoints,
+        target_assignees: targetAssignees
+      })
     });
     closeModal('modalApprove');
-    showToast(res.message || 'ตรวจรับสำเร็จ', 'success');
+    showToast(res.message || 'ตรวจรับและบันทึกคะแนน KPI สำเร็จ', 'success');
     await loadAllData();
+    if (state.currentPage === 'kpi' || state.commanderTab === 'kpi_adj') {
+      await renderKpiDashboard();
+    }
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
 
 // 4. Return Modal
+function toggleReturnKpiPoints() {
+  const act = document.getElementById('returnKpiAction')?.value || 'none';
+  const ptsEl = document.getElementById('returnKpiPoints');
+  if (ptsEl) {
+    ptsEl.disabled = act === 'none';
+  }
+}
+
 function openReturnModal(taskId, defaultTargetStatus = 'In Progress') {
   state.activeTaskId = taskId;
   const task = state.tasks.find(t => String(t.task_id) === String(taskId));
@@ -2041,9 +2213,16 @@ function openReturnModal(taskId, defaultTargetStatus = 'In Progress') {
   document.getElementById('returnTaskTitle').innerText = `📌 งาน: ${task.title} (ผู้รับผิดชอบ: ${task.assignee_name || '-'})`;
   document.getElementById('returnStatus').value = defaultTargetStatus;
   document.getElementById('returnRating').value = task.satisfaction_rating || 5;
-  document.getElementById('returnRatingLabel').innerText = `${task.satisfaction_rating || 5} ดาว (${(task.satisfaction_rating || 5) * 4} แต้ม)`;
+  document.getElementById('returnRatingLabel').innerText = `⭐ ${task.satisfaction_rating || 5} ดาว`;
   document.getElementById('returnFeedback').value = '';
   document.getElementById('returnNewDue').value = (task.due_date || '').slice(0, 10);
+  if (document.getElementById('returnKpiAction')) {
+    document.getElementById('returnKpiAction').value = 'none';
+  }
+  if (document.getElementById('returnKpiPoints')) {
+    document.getElementById('returnKpiPoints').value = 1;
+    document.getElementById('returnKpiPoints').disabled = true;
+  }
   openModal('modalReturn');
 }
 
@@ -2054,11 +2233,20 @@ async function handleConfirmReturn(e) {
   const rating = parseInt(document.getElementById('returnRating').value || '5', 10);
   const newDue = document.getElementById('returnNewDue').value || null;
   const feedback = document.getElementById('returnFeedback').value.trim();
+  const kpiAction = document.getElementById('returnKpiAction')?.value || 'none';
+  const kpiPoints = parseFloat(document.getElementById('returnKpiPoints')?.value || '0');
 
   try {
     const res = await api(`/api/tasks/${state.activeTaskId}/return`, {
       method: 'POST',
-      body: JSON.stringify({ target_status: targetStatus, rating, new_due_date: newDue, feedback })
+      body: JSON.stringify({
+        target_status: targetStatus,
+        rating,
+        new_due_date: newDue,
+        feedback,
+        kpi_action: kpiAction,
+        kpi_points: kpiAction === 'none' ? 0 : kpiPoints
+      })
     });
     closeModal('modalReturn');
     showToast(res.message || 'ส่งกลับงานเรียบร้อย', 'success');

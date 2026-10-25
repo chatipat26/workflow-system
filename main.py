@@ -43,6 +43,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # --- Helper Functions ---
 
+TH_TZ = timezone(timedelta(hours=7))
+
+def now_th() -> datetime:
+    return datetime.now(TH_TZ)
+
+def today_th_date():
+    return datetime.now(TH_TZ).date()
+
 def parse_roles(roles_val: Any) -> List[str]:
     if not roles_val:
         return ["ปฏิบัติงาน"]
@@ -51,6 +59,35 @@ def parse_roles(roles_val: Any) -> List[str]:
     if isinstance(roles_val, str):
         return [r.strip() for r in roles_val.split(",") if r.strip()]
     return ["ปฏิบัติงาน"]
+
+def parse_assignees(assignee_val: Any) -> List[str]:
+    if not assignee_val:
+        return []
+    if isinstance(assignee_val, list):
+        return [str(a).strip() for a in assignee_val if str(a).strip()]
+    return [a.strip() for a in str(assignee_val).split(",") if a.strip()]
+
+def is_user_assigned(username: Optional[str], task: Dict[str, Any]) -> bool:
+    if not username or not task:
+        return False
+    uname = str(username).strip()
+    if not uname:
+        return False
+    assignees = parse_assignees(task.get("assignee_name") or task.get("assignees"))
+    return uname in assignees
+
+def is_task_kpi_description(desc: Optional[str], task_title: Optional[str]) -> bool:
+    if not desc or not task_title:
+        return False
+    d = str(desc).strip()
+    t = str(task_title).strip()
+    if not t:
+        return False
+    return (
+        d.startswith(f'ตรวจรับงาน "{t}"')
+        or d.startswith(f"[ตรวจรับงาน: {t}]")
+        or d.startswith(f'ประเมินงาน "{t}"')
+    )
 
 def user_has_role(user_dict: Optional[Dict[str, Any]], role_name: str) -> bool:
     if not user_dict:
@@ -67,11 +104,7 @@ def user_can_edit_task_progress(curr_user: Dict[str, Any], task: Dict[str, Any])
         return True
     if user_has_role(curr_user, "ระดับสั่งการ"):
         return True
-    curr_username = str(curr_user.get("username", "")).strip()
-    assignees_str = str(task.get("assignee_name") or task.get("assignees") or "")
-    if curr_username and curr_username in [a.strip() for a in assignees_str.split(",")]:
-        return True
-    return False
+    return is_user_assigned(curr_user.get("username"), task)
 
 def create_jwt_token(data: dict) -> str:
     to_encode = data.copy()
@@ -154,14 +187,19 @@ class TaskSubmitRequest(BaseModel):
     attachment_url: Optional[str] = None
 
 class TaskApproveRequest(BaseModel):
-    satisfaction_rating: int
+    satisfaction_rating: int = 5
     feedback: Optional[str] = ""
+    kpi_action: Optional[str] = "add"  # "add", "deduct", "none"
+    kpi_points: Optional[float] = 1.0
+    target_assignees: Optional[List[str]] = None
 
 class TaskReturnRequest(BaseModel):
     target_status: str = "In Progress"
     feedback: str
     new_due_date: Optional[str] = None
     rating: Optional[int] = 5
+    kpi_action: Optional[str] = "none"  # "add", "deduct", "none"
+    kpi_points: Optional[float] = 0.0
 
 class TaskHandoverRequest(BaseModel):
     handover_to: List[str]
@@ -315,9 +353,27 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
 async def get_tasks(current_user: dict = Depends(get_current_user)):
     res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
     tasks = res.data or []
-    today = datetime.today().date()
+    today = today_th_date()
     curr_uname = current_user.get("username")
     is_comm = user_has_role(current_user, "ระดับสั่งการ") or current_user.get("role") == "Admin" or curr_uname == "admin"
+
+    # Fetch approval logs and KPI adjustments to enrich tasks with inspector & KPI score info
+    approval_logs_by_task: Dict[str, Dict[str, Any]] = {}
+    try:
+        l_res = supabase.table("task_logs").select("*").eq("action", "อนุมัติงานสำเร็จ").order("created_at", desc=True).execute()
+        for lg in (l_res.data or []):
+            tid = str(lg.get("task_id") or "")
+            if tid and tid not in approval_logs_by_task:
+                approval_logs_by_task[tid] = lg
+    except Exception:
+        pass
+
+    all_adjs: List[Dict[str, Any]] = []
+    try:
+        a_res = supabase.table("kpi_adjustments").select("*").order("created_at", desc=True).execute()
+        all_adjs = a_res.data or []
+    except Exception:
+        pass
 
     for t in tasks:
         due = t.get("due_date")
@@ -333,8 +389,26 @@ async def get_tasks(current_user: dict = Depends(get_current_user)):
             except Exception:
                 pass
         t["can_edit"] = is_comm or (t.get("creator_username") == curr_uname)
-        t["can_delete"] = is_comm or (t.get("creator_username") == curr_uname) or (curr_uname in str(t.get("assignee_name") or ""))
+        t["can_delete"] = is_comm or (t.get("creator_username") == curr_uname) or is_user_assigned(curr_uname, t)
         t["can_edit_progress"] = user_can_edit_task_progress(current_user, t)
+
+        # Enrich with inspector (approved_by) and KPI points given for this task
+        tid_str = str(t.get("task_id") or "")
+        app_log = approval_logs_by_task.get(tid_str)
+        approved_by = app_log.get("performed_by") if app_log else None
+        task_title = t.get("title") or ""
+        matching_adjs = [a for a in all_adjs if is_task_kpi_description(a.get("description"), task_title)]
+        task_kpi_pts = None
+        if matching_adjs:
+            try:
+                task_kpi_pts = float(matching_adjs[0].get("points", 0))
+            except Exception:
+                task_kpi_pts = None
+            if not approved_by:
+                approved_by = matching_adjs[0].get("created_by")
+
+        t["approved_by"] = approved_by
+        t["task_kpi_points"] = task_kpi_pts
     return tasks
 
 @app.post("/api/tasks")
@@ -409,16 +483,24 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
     if not t_res.data:
         raise HTTPException(status_code=404, detail="ไม่พบงานนี้ในระบบ")
     t = t_res.data[0]
-    assignee_str = str(t.get("assignee_name") or "")
-    if not (is_comm or is_admin or t.get("creator_username") == current_user.get("username") or current_user.get("username") in assignee_str):
+    if not (is_comm or is_admin or t.get("creator_username") == current_user.get("username") or is_user_assigned(current_user.get("username"), t)):
         raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ลบงานนี้")
 
     try:
         supabase.table("task_logs").delete().eq("task_id", str(task_id)).execute()
     except Exception:
         pass
+    try:
+        task_title = t.get("title") or ""
+        if task_title:
+            adj_res = supabase.table("kpi_adjustments").select("id, description").execute()
+            for a in (adj_res.data or []):
+                if is_task_kpi_description(a.get("description"), task_title) and a.get("id"):
+                    supabase.table("kpi_adjustments").delete().eq("id", a.get("id")).execute()
+    except Exception:
+        pass
     supabase.table("tasks").delete().eq("task_id", task_id).execute()
-    return {"success": True, "message": f"✅ ลบงาน '{t.get('title')}' สำเร็จ! ลดยอดจำนวนงานเรียบร้อยแล้ว"}
+    return {"success": True, "message": f"✅ ลบงาน '{t.get('title')}' สำเร็จ! ลดยอดจำนวนงานและอัปเดตสถิติ KPI เรียบร้อยแล้ว"}
 
 @app.post("/api/tasks/{task_id}/move")
 async def move_task(task_id: str, req: TaskMoveRequest, current_user: dict = Depends(get_current_user)):
@@ -452,7 +534,7 @@ async def submit_work(task_id: str, req: TaskSubmitRequest, current_user: dict =
         raise HTTPException(status_code=404, detail="ไม่พบงาน")
     t = t_res.data[0]
     curr_due = t.get("due_date")
-    today = datetime.today().date()
+    today = today_th_date()
     is_ontime = True
     if curr_due:
         try:
@@ -469,7 +551,7 @@ async def submit_work(task_id: str, req: TaskSubmitRequest, current_user: dict =
     upd_data = {
         "status": "In Review",
         "submission_note": comb_sub,
-        "completed_at": datetime.now().isoformat(),
+        "completed_at": now_th().isoformat(),
         "is_ontime": is_ontime
     }
     if req.attachment_url and not t.get("attachment_url"):
@@ -489,8 +571,21 @@ async def approve_task(task_id: str, req: TaskApproveRequest, current_user: dict
     t = t_res.data[0]
     task_type = t.get("task_type", "Project")
     curr_due = t.get("due_date")
-    now_iso = datetime.now().isoformat()
+    now_iso = now_th().isoformat()
     rating = max(1, min(5, req.satisfaction_rating))
+    inspector_uname = current_user.get("username")
+
+    # Ensure is_ontime is set even if task was moved directly to Done without /submit
+    is_ontime = t.get("is_ontime")
+    if is_ontime is None:
+        is_ontime = True
+        if curr_due:
+            try:
+                due_d = datetime.strptime(str(curr_due)[:10], "%Y-%m-%d").date()
+                if today_th_date() > due_d:
+                    is_ontime = False
+            except Exception:
+                pass
 
     # Extract attached image from submission_note if present so we preserve it in logs
     sub_raw = t.get("submission_note") or ""
@@ -503,18 +598,18 @@ async def approve_task(task_id: str, req: TaskApproveRequest, current_user: dict
 
     if task_type == "Routine":
         try:
-            old_due = datetime.strptime(str(curr_due)[:10], "%Y-%m-%d") if curr_due else datetime.today()
+            old_due = datetime.strptime(str(curr_due)[:10], "%Y-%m-%d") if curr_due else now_th()
             next_due = (old_due + timedelta(days=30)).strftime("%Y-%m-%d")
         except Exception:
-            next_due = (datetime.today() + timedelta(days=30)).strftime("%Y-%m-%d")
+            next_due = (now_th() + timedelta(days=30)).strftime("%Y-%m-%d")
         supabase.table("tasks").update({
             "status": "To Do",
             "due_date": next_due,
             "satisfaction_rating": rating,
             "completed_at": now_iso,
+            "is_ontime": is_ontime,
             "submission_note": req.feedback.strip() if (req.feedback and req.feedback.strip()) else None
         }).eq("task_id", task_id).execute()
-        msg = f"✅ ตรวจรับงาน Routine สำเร็จ ({rating} ดาว) และขยายรอบกำหนดส่งเดือนถัดไป ({next_due}) เรียบร้อยแล้ว"
     else:
         final_sub_note = sub_raw
         if req.feedback and req.feedback.strip():
@@ -525,20 +620,69 @@ async def approve_task(task_id: str, req: TaskApproveRequest, current_user: dict
             "status": "Done",
             "satisfaction_rating": rating,
             "completed_at": now_iso,
+            "is_ontime": is_ontime,
             "submission_note": final_sub_note
         }).eq("task_id", task_id).execute()
-        msg = f"✅ ตรวจรับงานสำเร็จ ({rating} ดาว) งานย้ายไป Done และบันทึกลงแดชบอร์ด KPI แล้ว"
 
-    log_details = f"อนุมัติผลงานสำเร็จ ({rating} ดาว) " + (f"- {req.feedback.strip()}" if req.feedback and req.feedback.strip() else "")
+    # Record KPI score given by the inspector (ผู้ตรวจรับงานเป็นผู้ให้คะแนน KPI แทนการคำนวณอัตโนมัติ)
+    task_title = (t.get("title") or "").strip()
+    all_task_assignees = parse_assignees(t.get("assignee_name") or t.get("assignees"))
+    target_assignees = (
+        [a.strip() for a in req.target_assignees if a.strip()]
+        if req.target_assignees is not None
+        else all_task_assignees
+    )
+
+    # Remove previous auto-recorded task inspection KPI adjustments for this task (except Routine cycles)
+    if task_type != "Routine" and task_title:
+        try:
+            existing_adjs = supabase.table("kpi_adjustments").select("id, description").execute()
+            for a in (existing_adjs.data or []):
+                if is_task_kpi_description(a.get("description"), task_title) and a.get("id"):
+                    supabase.table("kpi_adjustments").delete().eq("id", a.get("id")).execute()
+        except Exception:
+            pass
+
+    kpi_action = (req.kpi_action or "add").lower()
+    raw_pts = float(req.kpi_points or 0.0)
+    kpi_summary_txt = "ไม่ปรับแต้ม KPI (0)"
+    if kpi_action in ["add", "deduct"] and abs(raw_pts) > 0 and target_assignees:
+        signed_pts = abs(raw_pts) if kpi_action == "add" else -abs(raw_pts)
+        pts_display = int(signed_pts) if signed_pts == int(signed_pts) else signed_pts
+        r_type = "ความดีความชอบ" if signed_pts >= 0 else "ความผิดพลาด"
+        fb_clean = req.feedback.strip() if (req.feedback and req.feedback.strip()) else "ตรวจรับผลงานเรียบร้อย"
+        adj_desc = f'ตรวจรับงาน "{task_title}" (⭐ {rating} ดาว) - {fb_clean}'
+        for op_uname in target_assignees:
+            supabase.table("kpi_adjustments").insert({
+                "username": op_uname,
+                "points": signed_pts,
+                "reason_type": r_type,
+                "description": adj_desc,
+                "created_by": inspector_uname
+            }).execute()
+        kpi_summary_txt = f"KPI {pts_display:+} แต้ม (โดย @{inspector_uname})"
+
+    if task_type == "Routine":
+        msg = f"✅ ตรวจรับงาน Routine สำเร็จ ({rating} ดาว | {kpi_summary_txt}) และขยายรอบเดือนถัดไป ({next_due}) แล้ว"
+    else:
+        msg = f"✅ ตรวจรับงานสำเร็จ ({rating} ดาว | {kpi_summary_txt}) โดยผู้ตรวจรับ @{inspector_uname} บันทึกลงตาราง KPI แล้ว"
+
+    log_details = f"อนุมัติผลงานสำเร็จ ({rating} ดาว | {kpi_summary_txt})" + (f" - {req.feedback.strip()}" if req.feedback and req.feedback.strip() else "")
     if done_img:
         log_details += f"\n\n[ATTACHED_IMAGE: {done_img}]"
-    log_task_action(task_id, "อนุมัติงานสำเร็จ", current_user.get("username"), log_details)
+    log_task_action(task_id, "อนุมัติงานสำเร็จ", inspector_uname, log_details)
     return {"success": True, "message": msg}
 
 @app.post("/api/tasks/{task_id}/return")
 async def return_task(task_id: str, req: TaskReturnRequest, current_user: dict = Depends(get_current_user)):
     if not user_has_role(current_user, "ระดับสั่งการ"):
         raise HTTPException(status_code=403, detail="สิทธิ์เฉพาะผู้มียศระดับสั่งการเท่านั้น")
+    t_res = supabase.table("tasks").select("*").eq("task_id", task_id).execute()
+    if not t_res.data:
+        raise HTTPException(status_code=404, detail="ไม่พบงาน")
+    t = t_res.data[0]
+    inspector_uname = current_user.get("username")
+
     target_status = req.target_status if req.target_status in ["In Progress", "Revision", "To Do"] else "In Progress"
     if target_status == "In Progress":
         action_title = "อนุมัติให้ดำเนินงานต่อ"
@@ -559,10 +703,31 @@ async def return_task(task_id: str, req: TaskReturnRequest, current_user: dict =
         upd["due_date"] = req.new_due_date
 
     supabase.table("tasks").update(upd).eq("task_id", task_id).execute()
+
+    # Optional KPI adjustment by inspector when returning/evaluating task
+    task_title = (t.get("title") or "").strip()
+    kpi_action = (req.kpi_action or "none").lower()
+    raw_pts = float(req.kpi_points or 0.0)
+    kpi_txt = ""
+    if kpi_action in ["add", "deduct"] and abs(raw_pts) > 0:
+        signed_pts = abs(raw_pts) if kpi_action == "add" else -abs(raw_pts)
+        pts_display = int(signed_pts) if signed_pts == int(signed_pts) else signed_pts
+        r_type = "ความดีความชอบ" if signed_pts >= 0 else "ความผิดพลาด"
+        adj_desc = f'ประเมินงาน "{task_title}" ({action_title} | ⭐ {rating} ดาว) - {req.feedback.strip()}'
+        for op_uname in parse_assignees(t.get("assignee_name") or t.get("assignees")):
+            supabase.table("kpi_adjustments").insert({
+                "username": op_uname,
+                "points": signed_pts,
+                "reason_type": r_type,
+                "description": adj_desc,
+                "created_by": inspector_uname
+            }).execute()
+        kpi_txt = f" | ปรับ KPI {pts_display:+} แต้ม"
+
     due_txt = req.new_due_date or "-"
-    log_msg = f"{req.feedback.strip()} (กำหนดวันส่งใหม่: {due_txt}) [ประเมินความพึงพอใจ: {rating} ดาว]"
-    log_task_action(task_id, action_title, current_user.get("username"), log_msg)
-    return {"success": True, "message": f"✅ บันทึกและย้ายงานไปยัง {target_status} เรียบร้อยแล้ว! (ประเมิน {rating} ดาว)"}
+    log_msg = f"{req.feedback.strip()} (กำหนดวันส่งใหม่: {due_txt}) [ประเมินความพึงพอใจ: {rating} ดาว{kpi_txt}]"
+    log_task_action(task_id, action_title, inspector_uname, log_msg)
+    return {"success": True, "message": f"✅ บันทึกและย้ายงานไปยัง {target_status} เรียบร้อยแล้ว! (ประเมิน {rating} ดาว{kpi_txt})"}
 
 @app.post("/api/tasks/{task_id}/handover")
 async def handover_task(task_id: str, req: TaskHandoverRequest, current_user: dict = Depends(get_current_user)):
@@ -704,14 +869,14 @@ async def get_kpi_summary(current_user: dict = Depends(get_current_user)):
         a["target_fullname"] = user_map.get(uname_target, uname_target)
         a["creator_fullname"] = user_map.get(uname_creator, uname_creator)
 
-    # Filter operators (exact match with fetch_operators in original app.py)
+    # Filter operators
     operators = [u for u in users if u.get("is_approved") is not False and "ปฏิบัติงาน" in parse_roles(u.get("roles"))]
 
     summary = []
     for op in operators:
         uname = op["username"]
         fname = op.get("fullname") or uname
-        my_tasks = [t for t in tasks if uname in str(t.get("assignee_name") or "")]
+        my_tasks = [t for t in tasks if is_user_assigned(uname, t)]
         done_tasks = [t for t in my_tasks if t.get("status") == "Done"]
         ontime_c = len([t for t in done_tasks if t.get("is_ontime") is True])
         late_c = len([t for t in done_tasks if t.get("is_ontime") is False])
@@ -727,19 +892,13 @@ async def get_kpi_summary(current_user: dict = Depends(get_current_user)):
                 except Exception:
                     pass
 
-        if ratings:
-            avg_rating = sum(ratings) / len(ratings)
-            satisfaction_pts = avg_rating * 4.0
-        else:
-            avg_rating = 0.0
-            satisfaction_pts = 0.0
+        avg_rating = (sum(ratings) / len(ratings)) if ratings else 0.0
 
         user_adjs = [a for a in adjustments if a.get("username") == uname]
-        manual_pts = sum(float(a.get("points", 0)) for a in user_adjs)
+        manual_pts = round(sum(float(a.get("points", 0)) for a in user_adjs), 1)
 
-        # Original formula from app.py line 2508:
-        # tot_kpi = max(0, round((d_count * 5) + (ontime_c * 10) - (late_c * 5) + satisfaction_pts + man_pts, 1))
-        total_kpi = max(0.0, round((len(done_tasks) * 5) + (ontime_c * 10) - (late_c * 5) + satisfaction_pts + manual_pts, 1))
+        # KPI score is determined directly by inspector/commander KPI adjustments (no automatic formula inflation)
+        total_kpi = manual_pts
 
         summary.append({
             "username": uname,
@@ -753,7 +912,7 @@ async def get_kpi_summary(current_user: dict = Depends(get_current_user)):
             "total_kpi": total_kpi
         })
 
-    summary.sort(key=lambda x: x["total_kpi"], reverse=True)
+    summary.sort(key=lambda x: (x["total_kpi"], x["done_tasks"]), reverse=True)
     
     overview = {
         "total_tasks": len(tasks),

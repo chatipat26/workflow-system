@@ -619,7 +619,7 @@
           <!-- Pane 1: Leaderboard & Charts -->
           <div id="kpiPaneLeaderboard" class="space-y-6">
             <div class="p-3.5 bg-svv-50/90 border border-svv-200 rounded-xl text-xs text-svv-900 leading-relaxed">
-              💡 <strong>เกณฑ์การคำนวณคะแนน KPI:</strong> งานที่เสร็จแล้ว (Done) +5 แต้ม | ส่งตรงเวลา +10 แต้ม | ส่งล่าช้า -5 แต้ม | คะแนนความพึงพอใจ (1-5 ดาว) x 4 แต้ม | แต้มพิเศษ (+/-) <em>*(หมายเหตุ: หากยังไม่มีงานที่ทำเสร็จ จะยังไม่ได้รับคะแนนดาวความพึงพอใจ)*</em>
+              💡 <strong>เกณฑ์การให้คะแนน KPI:</strong> คะแนน KPI รวมคำนวณจากคะแนนที่ <strong>"ผู้ตรวจรับงาน / ผู้สั่งการ"</strong> เป็นผู้กำหนดให้หรือหักเมื่อตรวจรับงาน (หรือปรับคะแนนผ่านฟอร์ม KPI) โดยระบบจะบันทึกชื่อผู้ตรวจรับงานและเหตุผลลงในตารางประวัติ KPI อัตโนมัติ <em>(ส่วนจำนวนงานที่เสร็จ, การส่งตรงเวลา/ล่าช้า และดาวเฉลี่ย ⭐ จะแสดงเป็นสถิติคุณภาพผลงานของพนักงาน)</em>
             </div>
 
             <!-- Charts & Right-Side KPI Adjustment Log Row -->
@@ -896,27 +896,78 @@
 
   <!-- Modal 3: Approve Done & Rating (สำหรับระดับสั่งการ) -->
   <div id="modalApprove" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
-      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-        <h3 class="text-sm font-extrabold text-slate-800">🏆 ตรวจรับงานสำเร็จ & ประเมินคะแนน KPI</h3>
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <h3 class="text-sm font-extrabold text-slate-800">🏆 ตรวจรับงานสำเร็จ & ผู้ตรวจรับกำหนดคะแนน KPI</h3>
         <button onclick="closeModal('modalApprove')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
       </div>
       <form onsubmit="handleConfirmApprove(event)" class="p-5 space-y-4 flex-1 overflow-y-auto">
         <div id="approveTaskDetails" class="text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2"></div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1">⭐ คะแนนความพึงพอใจต่อผลงาน (1-5 ดาว):</label>
-          <div class="flex items-center gap-3">
-            <input type="range" id="approveRating" min="1" max="5" value="5" oninput="document.getElementById('ratingValLabel').innerText = this.value + ' ดาว (' + (this.value*4) + ' แต้ม KPI)'" class="flex-1 accent-svv-600 cursor-pointer">
-            <span id="ratingValLabel" class="text-xs font-extrabold text-amber-600 min-w-32 text-right">5 ดาว (20 แต้ม KPI)</span>
+
+        <!-- Inspector KPI Scoring Control Box -->
+        <div class="p-3.5 rounded-xl border border-svv-200 bg-sky-50/60 space-y-3">
+          <div class="flex items-center justify-between flex-wrap gap-1">
+            <label class="text-xs font-extrabold text-svv-800">⚖️ กำหนดคะแนน KPI โดยผู้ตรวจรับงาน:</label>
+            <span id="approveInspectorBadge" class="text-[11px] font-bold text-svv-700 bg-white px-2.5 py-0.5 rounded-full border border-svv-200">👑 ผู้ตรวจรับ</span>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">💡 คะแนนดาวนี้จะนำไปคูณ 4 แต้มสำหรับคำนวณ KPI</p>
+
+          <!-- Action selector: Add / Deduct / None -->
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" id="btnKpiActAdd" onclick="setApproveKpiAction('add')" class="py-2 px-2 rounded-xl text-xs font-extrabold border-2 border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm transition">
+              🔺 เพิ่มคะแนน (+)
+            </button>
+            <button type="button" id="btnKpiActDeduct" onclick="setApproveKpiAction('deduct')" class="py-2 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-rose-50 transition">
+              🔻 ลดคะแนน (-)
+            </button>
+            <button type="button" id="btnKpiActNone" onclick="setApproveKpiAction('none')" class="py-2 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition">
+              ⚪ ไม่ปรับแต้ม (0)
+            </button>
+          </div>
+          <input type="hidden" id="approveKpiAction" value="add">
+
+          <!-- Points input + Quick presets -->
+          <div id="approveKpiPointsBox" class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <label class="text-xs font-bold text-slate-700">จำนวนแต้ม KPI ที่ผู้ตรวจรับกำหนด:</label>
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="setApproveKpiPreset(1)" class="px-2 py-0.5 bg-white hover:bg-svv-100 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold transition">1</button>
+                <button type="button" onclick="setApproveKpiPreset(2)" class="px-2 py-0.5 bg-white hover:bg-svv-100 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold transition">2</button>
+                <button type="button" onclick="setApproveKpiPreset(3)" class="px-2 py-0.5 bg-white hover:bg-svv-100 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold transition">3</button>
+                <button type="button" onclick="setApproveKpiPreset(5)" class="px-2 py-0.5 bg-white hover:bg-svv-100 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold transition">5</button>
+                <button type="button" onclick="setApproveKpiPreset(10)" class="px-2 py-0.5 bg-white hover:bg-svv-100 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold transition">10</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="approveKpiSignPrefix" class="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-extrabold text-sm">+</span>
+              <input type="number" id="approveKpiPoints" min="0.5" max="100" step="0.5" value="1" oninput="updateApproveKpiPreview()" class="flex-1 px-3 py-2 text-sm font-extrabold bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none">
+              <span class="text-xs font-bold text-slate-600">แต้ม KPI</span>
+            </div>
+          </div>
+
+          <!-- Assignees receiving this KPI score -->
+          <div id="approveAssigneesBox" class="space-y-1">
+            <label class="block text-[11px] font-bold text-slate-600">👤 ผู้ปฏิบัติงานที่จะได้รับ/ถูกหักคะแนนนี้:</label>
+            <div id="approveAssigneesList" class="flex flex-wrap gap-2"></div>
+          </div>
+
+          <p id="approveKpiSummaryPreview" class="text-[11px] font-bold text-emerald-700 bg-white/90 px-3 py-1.5 rounded-lg border border-emerald-200"></p>
         </div>
+
         <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1">💬 ข้อความแสดงความคิดเห็น / คำชมเชยในการตรวจรับงาน:</label>
-          <textarea id="approveFeedback" rows="2" placeholder="เช่น ผลงานเรียบร้อยตรงตามเป้าหมาย ส่งมอบงานสมบูรณ์..." class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500"></textarea>
+          <label class="block text-xs font-bold text-slate-700 mb-1">⭐ ประเมินดาวความพึงพอใจต่อคุณภาพงาน (1-5 ดาว):</label>
+          <div class="flex items-center gap-3">
+            <input type="range" id="approveRating" min="1" max="5" value="5" oninput="document.getElementById('ratingValLabel').innerText = '⭐ ' + this.value + ' ดาว'" class="flex-1 accent-svv-600 cursor-pointer">
+            <span id="ratingValLabel" class="text-xs font-extrabold text-amber-600 min-w-24 text-right">⭐ 5 ดาว</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">💡 ดาวความพึงพอใจใช้บันทึกสถิติคุณภาพงาน (ส่วนแต้ม KPI จะอ้างอิงตามที่ผู้ตรวจรับกำหนดด้านบน)</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">💬 เหตุผลการให้คะแนน / ความคิดเห็นในการตรวจรับงาน:</label>
+          <textarea id="approveFeedback" rows="2" placeholder="ระบุเหตุผลหรือคำชมเชย (จะแสดงในตารางประวัติ KPI ใครให้ใคร เพราะอะไร)..." class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500"></textarea>
         </div>
         <button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition">
-          🏆 ยืนยันตรวจรับงานสำเร็จ (ย้ายไป Done)
+          🏆 ยืนยันตรวจรับงาน & บันทึกคะแนน KPI
         </button>
       </form>
     </div>
@@ -924,12 +975,12 @@
 
   <!-- Modal 4: Return Task (ส่งกลับแก้ไข / ทำต่อ / ประเมินผล) -->
   <div id="modalReturn" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
       <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-        <h3 class="text-sm font-extrabold text-slate-800">🔄 บันทึกเหตุผล, ประเมินความพึงพอใจ & กำหนดวันส่งใหม่</h3>
+        <h3 class="text-sm font-extrabold text-slate-800">🔄 ส่งกลับแก้ไข / ทำต่อ & ประเมินผล</h3>
         <button onclick="closeModal('modalReturn')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
       </div>
-      <form onsubmit="handleConfirmReturn(event)" class="p-5 space-y-3.5">
+      <form onsubmit="handleConfirmReturn(event)" class="p-5 space-y-3.5 flex-1 overflow-y-auto">
         <p id="returnTaskTitle" class="text-xs font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200"></p>
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">การตัดสินใจของผู้สั่งการ:</label>
@@ -940,10 +991,21 @@
           </select>
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1">⭐ ประเมินความพึงพอใจต่อผลงานในรอบนี้ (1-5 ดาว):</label>
+          <label class="block text-xs font-bold text-slate-700 mb-1">⭐ ประเมินดาวความพึงพอใจในรอบนี้ (1-5 ดาว):</label>
           <div class="flex items-center gap-3">
-            <input type="range" id="returnRating" min="1" max="5" value="5" oninput="document.getElementById('returnRatingLabel').innerText = this.value + ' ดาว (' + (this.value*4) + ' แต้ม)'" class="flex-1 accent-svv-600">
-            <span id="returnRatingLabel" class="text-xs font-bold text-amber-600 min-w-28 text-right">5 ดาว (20 แต้ม)</span>
+            <input type="range" id="returnRating" min="1" max="5" value="5" oninput="document.getElementById('returnRatingLabel').innerText = '⭐ ' + this.value + ' ดาว'" class="flex-1 accent-svv-600">
+            <span id="returnRatingLabel" class="text-xs font-bold text-amber-600 min-w-20 text-right">⭐ 5 ดาว</span>
+          </div>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+          <label class="block text-xs font-bold text-slate-700">⚖️ ปรับคะแนน KPI ในรอบนี้ (โดยผู้ตรวจรับ):</label>
+          <div class="grid grid-cols-2 gap-2">
+            <select id="returnKpiAction" onchange="toggleReturnKpiPoints()" class="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl font-semibold">
+              <option value="none">⚪ ไม่ปรับคะแนน KPI (0)</option>
+              <option value="add">🔺 เพิ่มคะแนน KPI (+)</option>
+              <option value="deduct">🔻 หักคะแนน KPI (-)</option>
+            </select>
+            <input type="number" id="returnKpiPoints" min="0.5" max="100" step="0.5" value="1" disabled class="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl disabled:opacity-50" placeholder="แต้ม KPI">
           </div>
         </div>
         <div>
