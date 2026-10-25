@@ -162,6 +162,31 @@ function isPdfAttachment(val) {
   return v.startsWith('data:application/pdf') || v.endsWith('.pdf') || v.includes('.pdf?');
 }
 
+function openAttachmentViewer(src) {
+  if (!src) return;
+  const val = String(src).trim();
+  if (val.startsWith('data:')) {
+    try {
+      const parts = val.split(',');
+      const meta = parts[0];
+      const b64 = parts[1];
+      const mimeMatch = meta.match(/data:([^;]+)/);
+      const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+      const binStr = atob(b64);
+      const len = binStr.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      return;
+    } catch (e) {
+      console.error('Failed to open data URI:', e);
+    }
+  }
+  window.open(val, '_blank');
+}
+
 function renderAttachmentPreviewHtml(fileVal, caption = 'ไฟล์แนบ') {
   if (!fileVal || !String(fileVal).trim()) return '';
   const val = String(fileVal).trim();
@@ -212,7 +237,7 @@ function renderAttachmentPreviewHtml(fileVal, caption = 'ไฟล์แนบ')
         ${val.startsWith('http') ? `<a href="${escapeHtml(val)}" target="_blank" class="text-[11px] text-svv-600 font-bold hover:underline">🔗 เปิดลิงก์ไฟล์แนบเต็ม</a>` : ''}
       </div>
       <img src="${val}" alt="${escapeHtml(caption)}" class="max-h-60 rounded-lg border border-slate-200 object-contain bg-slate-50 mx-auto cursor-pointer"
-        onclick="window.open('${val}')"
+        onclick="openAttachmentViewer(this.src)"
         onerror="this.outerHTML='<a href=\\'${escapeHtml(val)}\\' target=\\'_blank\\' class=\\'text-xs text-svv-600 font-bold underline\\'>🔗 คลิกเพื่อเปิดดูลิงก์ไฟล์แนบ</a>'" />
     </div>
   `;
@@ -491,12 +516,6 @@ function renderUserProfile() {
     adminNav.classList.toggle('hidden', !state.user.is_admin);
     adminNav.classList.toggle('flex', state.user.is_admin);
   }
-
-  const cmdNav = document.getElementById('navCommander');
-  if (cmdNav) {
-    cmdNav.classList.toggle('hidden', !state.user.is_commander);
-    cmdNav.classList.toggle('flex', state.user.is_commander);
-  }
 }
 
 // --- Navigation between Modules ---
@@ -628,6 +647,15 @@ function switchCommanderTab(tab) {
 }
 
 function renderCommanderTabs() {
+  const isComm = Boolean(state.user?.is_commander || state.user?.is_admin);
+  const restrictedEl = document.getElementById('commanderRestrictedNotice');
+  const mainEl = document.getElementById('commanderMainContent');
+  if (restrictedEl && mainEl) {
+    restrictedEl.classList.toggle('hidden', isComm);
+    mainEl.classList.toggle('hidden', !isComm);
+  }
+  if (!isComm) return;
+
   renderManageTasksTable();
   if (state.commanderTab === 'handover') renderHandoverRequests();
   if (state.commanderTab === 'review') renderReviewTasks();
@@ -739,7 +767,7 @@ function renderManageTasksTable() {
       <div class="flex items-center gap-2 shrink-0">
         <button onclick="openEditModal('${t.task_id}')" class="px-3 py-1.5 bg-white hover:bg-svv-50 text-svv-700 border border-slate-200 rounded-xl text-xs font-bold transition">✏️ แก้ไขงาน</button>
         <button onclick="openProgressModal('${t.task_id}')" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition">📝 คืบหน้า</button>
-        <button onclick="handleDeleteTask('${t.task_id}', '${escapeHtml(t.title)}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition">🗑️ ลบงาน</button>
+        <button onclick="handleDeleteTask('${t.task_id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition">🗑️ ลบงาน</button>
       </div>
     </div>
   `).join('');
@@ -1031,7 +1059,7 @@ function renderKanbanCard(t) {
           <button onclick="openProgressModal('${t.task_id}')" title="บันทึก/ดูความคืบหน้า" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">📝</button>
           ${t.status !== 'Done' ? `<button onclick="openHandoverModal('${t.task_id}')" title="ส่งต่องาน / ปรับทีม" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">🤝</button>` : ''}
           ${t.can_edit ? `<button onclick="openEditModal('${t.task_id}')" title="แก้ไขงาน" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">✏️</button>` : ''}
-          ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}', '${escapeHtml(t.title)}')" title="ลบงาน" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold">🗑️</button>` : ''}
+          ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" title="ลบงาน" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold">🗑️</button>` : ''}
         </div>
         <div class="flex gap-1">
           ${(t.status === 'To Do' || t.status === 'Revision') ? `<button onclick="quickMoveTask('${t.task_id}', 'In Progress')" class="px-2 py-1 bg-svv-600 hover:bg-svv-700 text-white font-bold rounded-lg text-[10px] transition">▶️ เริ่มทำ</button>` : ''}
@@ -1079,7 +1107,7 @@ function renderCompactList() {
         <button onclick="openProgressModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">📝 ความคืบหน้า</button>
         ${t.status !== 'Done' ? `<button onclick="openHandoverModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">🤝 ส่งต่อ</button>` : ''}
         ${t.can_edit ? `<button onclick="openEditModal('${t.task_id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">✏️ แก้ไข</button>` : ''}
-        ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}', '${escapeHtml(t.title)}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition">🗑️ ลบ</button>` : ''}
+        ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition">🗑️ ลบ</button>` : ''}
       </div>
     </div>
   `).join('');
@@ -1189,12 +1217,18 @@ async function renderKpiDashboard() {
         quickList.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">ไม่มีงานในระบบ</p>';
       } else {
         quickList.innerHTML = state.tasks.map(t => `
-          <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2 text-xs">
-            <div class="truncate">
-              <span class="font-bold text-slate-800">${escapeHtml(t.title)}</span>
-              <span class="text-slate-500 ml-2">👤 ${escapeHtml(t.assignee_name || '-')} | สถานะ: <strong>${t.status}</strong></span>
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div class="space-y-0.5 truncate">
+              <div>
+                <span class="font-bold text-slate-800">${escapeHtml(t.title)}</span>
+                <span class="badge-status ${getBadgeClass(t.status)} text-[10px] ml-1.5">${t.status}</span>
+              </div>
+              <p class="text-[11px] text-slate-500">ผู้รับผิดชอบ: <strong>${escapeHtml(t.assignee_name || '-')}</strong> | ผู้สั่งการ: @${escapeHtml(t.creator_username || '-')} | กำหนดส่ง: ${t.due_date || '-'}</p>
             </div>
-            ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}', '${escapeHtml(t.title)}')" class="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold shrink-0">🗑️ ลบงาน</button>` : ''}
+            <div class="flex items-center gap-2 shrink-0">
+              <button onclick="openProgressModal('${t.task_id}')" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[11px] font-bold">📝 ความคืบหน้า</button>
+              ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold">🗑️ ยืนยันลบงานนี้</button>` : ''}
+            </div>
           </div>
         `).join('');
       }
@@ -1339,17 +1373,18 @@ function renderHistoryReport() {
   if (countEl) countEl.innerText = `พบรายการงานทั้งหมด: ${filtered.length} งาน`;
 
   const doneList = filtered.filter(t => t.status === 'Done');
+  const cntDone = doneList.length;
   const ontimeCount = doneList.filter(t => t.is_ontime === true).length;
   const lateCount = doneList.filter(t => t.is_ontime === false).length;
   const rated = doneList.filter(t => parseFloat(t.satisfaction_rating || 0) > 0);
-  const avgStar = rated.length ? (rated.reduce((s, t) => s + parseFloat(t.satisfaction_rating), 0) / rated.length).toFixed(1) : '0.0';
-  const totalPts = filtered.reduce((s, t) => s + calcTaskKpiScore(t), 0);
+  const avgRtNum = rated.length ? Math.round((rated.reduce((s, t) => s + parseFloat(t.satisfaction_rating), 0) / rated.length) * 10) / 10 : 0.0;
+  const totalKpiPts = (cntDone * 5) + (ontimeCount * 10) - (lateCount * 5) + Math.trunc(avgRtNum * 4);
 
   if (cardsEl) {
     cardsEl.innerHTML = `
       <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
-        <span class="text-[11px] font-bold text-slate-500">📋 จำนวนงานที่พบ</span>
-        <p class="text-lg font-extrabold text-slate-800 mt-0.5">${filtered.length} งาน</p>
+        <span class="text-[11px] font-bold text-slate-500">🏆 งานที่เสร็จ</span>
+        <p class="text-lg font-extrabold text-slate-800 mt-0.5">${cntDone} งาน</p>
       </div>
       <div class="bg-white p-3.5 rounded-2xl border border-emerald-200 shadow-sm">
         <span class="text-[11px] font-bold text-emerald-600">🟢 ส่งตรงเวลา</span>
@@ -1360,12 +1395,12 @@ function renderHistoryReport() {
         <p class="text-lg font-extrabold text-rose-700 mt-0.5">${lateCount} งาน</p>
       </div>
       <div class="bg-white p-3.5 rounded-2xl border border-amber-200 shadow-sm">
-        <span class="text-[11px] font-bold text-amber-600">⭐ ความพึงพอใจเฉลี่ย</span>
-        <p class="text-lg font-extrabold text-amber-600 mt-0.5">${avgStar} ดาว</p>
+        <span class="text-[11px] font-bold text-amber-600">⭐ ดาวเฉลี่ย</span>
+        <p class="text-lg font-extrabold text-amber-600 mt-0.5">${avgRtNum > 0 ? avgRtNum + '/5' : '-'}</p>
       </div>
       <div class="bg-white p-3.5 rounded-2xl border border-svv-200 shadow-sm">
-        <span class="text-[11px] font-bold text-svv-700">🏆 แต้ม KPI จากผลงาน</span>
-        <p class="text-lg font-extrabold text-svv-700 mt-0.5">+${totalPts} แต้ม</p>
+        <span class="text-[11px] font-bold text-svv-700">💎 แต้ม KPI งานนี้</span>
+        <p class="text-lg font-extrabold text-svv-700 mt-0.5">${totalKpiPts >= 0 ? '+' + totalKpiPts : totalKpiPts}</p>
       </div>
     `;
   }
@@ -1376,8 +1411,8 @@ function renderHistoryReport() {
   }
 
   tbody.innerHTML = filtered.map(t => {
-    const ontimeTxt = t.status !== 'Done' ? '⏳ กำลังทำ' : (t.is_ontime === true ? '🟢 ทันเวลา' : '🔴 ล่าช้า');
-    const starTxt = t.satisfaction_rating ? `⭐ ${t.satisfaction_rating}` : '-';
+    const ontimeTxt = t.is_ontime === true ? '🟢 ตรงเวลา (+10)' : (t.is_ontime === false ? '🔴 ล่าช้า (-5)' : '⚪ ปกติ');
+    const starTxt = t.satisfaction_rating ? `⭐ ${t.satisfaction_rating}/5` : '-';
     const pts = calcTaskKpiScore(t);
     return `
       <tr class="hover:bg-slate-50 transition">
@@ -1390,10 +1425,13 @@ function renderHistoryReport() {
         <td class="py-2.5 px-2">${escapeHtml(getTaskThaiMonthYear(t))}</td>
         <td class="py-2.5 px-2 font-semibold">${ontimeTxt}</td>
         <td class="py-2.5 px-2 font-bold text-amber-600">${starTxt}</td>
-        <td class="py-2.5 px-2 text-right font-extrabold text-svv-700">${pts > 0 ? '+' + pts : '0'}</td>
+        <td class="py-2.5 px-2 text-right font-extrabold text-svv-700">${pts >= 0 ? '+' + pts : pts}</td>
         <td class="py-2.5 px-2"><span class="badge-status ${getBadgeClass(t.status)} text-[10px]">${t.status}</span></td>
         <td class="py-2.5 px-3">
-          <button onclick="openProgressModal('${t.task_id}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold">📝 ดูประวัติ</button>
+          <div class="flex items-center gap-1">
+            <button onclick="openProgressModal('${t.task_id}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold">📝 ความคืบหน้า</button>
+            ${t.can_delete ? `<button onclick="handleDeleteTask('${t.task_id}')" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-bold">🗑️</button>` : ''}
+          </div>
         </td>
       </tr>
     `;
@@ -2018,8 +2056,10 @@ async function handleConfirmEditTask(e) {
 }
 
 // 7. Delete Task
-async function handleDeleteTask(taskId, title) {
-  if (!confirm(`คุณต้องการลบงาน "${title}" หรือไม่?\n(ระบบจะตัดยอดงานและลบออกจากสถิติ KPI ทันที)`)) return;
+async function handleDeleteTask(taskId, title = '') {
+  const found = state.tasks.find(t => String(t.task_id) === String(taskId));
+  const taskTitle = title || (found ? found.title : taskId);
+  if (!confirm(`คุณต้องการลบงาน "${taskTitle}" หรือไม่?\n(ระบบจะตัดยอดงานและลบออกจากสถิติ KPI ทันที)`)) return;
   try {
     const res = await api(`/api/tasks/${taskId}`, { method: 'DELETE' });
     showToast(res.message || 'ลบงานสำเร็จ', 'success');
