@@ -694,9 +694,15 @@ async def get_kpi_summary(current_user: dict = Depends(get_current_user)):
     
     u_res = supabase.table("app_users").select("username, fullname, roles, is_approved").execute()
     users = u_res.data or []
+    user_map = {u["username"]: (u.get("fullname") or u["username"]) for u in users if u.get("username")}
     
     adj_res = supabase.table("kpi_adjustments").select("*").order("created_at", desc=True).execute()
     adjustments = adj_res.data or []
+    for a in adjustments:
+        uname_target = a.get("username") or ""
+        uname_creator = a.get("created_by") or ""
+        a["target_fullname"] = user_map.get(uname_target, uname_target)
+        a["creator_fullname"] = user_map.get(uname_creator, uname_creator)
 
     # Filter operators (exact match with fetch_operators in original app.py)
     operators = [u for u in users if u.get("is_approved") is not False and "ปฏิบัติงาน" in parse_roles(u.get("roles"))]
@@ -779,6 +785,14 @@ async def add_kpi_adjustment(req: KpiAdjustmentRequest, current_user: dict = Dep
         "created_by": current_user.get("username")
     }).execute()
     return {"success": True, "message": f"✅ บันทึกคะแนน {points:+} ให้ @{req.username} เรียบร้อยแล้ว!"}
+
+@app.delete("/api/kpi/adjustments/{adj_id}")
+async def delete_kpi_adjustment(adj_id: str, current_user: dict = Depends(get_current_user)):
+    is_comm = user_has_role(current_user, "ระดับสั่งการ") or current_user.get("role") == "Admin" or current_user.get("username") == "admin"
+    if not is_comm:
+        raise HTTPException(status_code=403, detail="สิทธิ์เฉพาะผู้มียศระดับสั่งการหรือ Admin เท่านั้น")
+    supabase.table("kpi_adjustments").delete().eq("id", adj_id).execute()
+    return {"success": True, "message": "🗑️ ลบรายการปรับคะแนน KPI เรียบร้อยแล้ว"}
 
 # Serve Frontend HTML
 @app.get("/{full_path:path}", response_class=HTMLResponse)

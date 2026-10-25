@@ -81,3 +81,85 @@ body {
   color: #0369a1;
   font-weight: 600;
 }
+
+/* Stacked Cards Switcher (When multiple tasks are in the same column) */
+.card-stack-box {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 9px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-stack-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0369a1;
+}
+.card-stack-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.card-stack-count-badge {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.card-stack-dropdown {
+  width: 100%;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #7dd3fc;
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  outline: none;
+  text-overflow: ellipsis;
+}
+.card-stack-dropdown:hover,
+.card-stack-dropdown:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+/* 3D Stacked Paper Effect for Stacked Kanban Cards */
+.kanban-card.card-stacked {
+  box-shadow:
+    0 2px 5px rgba(15, 23, 42, 0.05),
+    0 5px 0 -2px #f8fafc,
+    0 5px 0 -1px #cbd5e1,
+    0 10px 0 -4px #f1f5f9,
+    0 10px 0 -3px #94a3b8;
+  margin-bottom: 10px;
+}
+
+/* Quick Status Selector on Card Toolbar */
+.quick-move-sel {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  outline: none;
+  max-width: 98px;
+}
+.quick-move-sel:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}

@@ -383,36 +383,64 @@
             <div id="reviewList" class="space-y-3"></div>
           </div>
 
-          <!-- SubTab 4: KPI Adjustments Form -->
+          <!-- SubTab 4: KPI Adjustments Form & History Table -->
           <div id="cmdPaneKpi_adj" class="hidden space-y-6">
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-2xl">
-              <h3 class="text-base font-extrabold text-slate-800 mb-4">⚖️ แบบฟอร์มเพิ่มหรือลดคะแนน KPI</h3>
-              <form onsubmit="handleKpiAdjustment(event)" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">เลือกพนักงาน *</label>
-                    <select id="adjOperator" required class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none"></select>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <!-- Left: Form -->
+              <div class="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 class="text-base font-extrabold text-slate-800 mb-4">⚖️ แบบฟอร์มเพิ่มหรือลดคะแนน KPI</h3>
+                <form onsubmit="handleKpiAdjustment(event)" class="space-y-4">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-700 mb-1">เลือกพนักงาน *</label>
+                      <select id="adjOperator" required class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none"></select>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-bold text-slate-700 mb-1">ประเภทการปรับแต้ม *</label>
+                      <select id="adjType" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none">
+                        <option value="ความดีความชอบ">ความดีความชอบ (เพิ่มแต้ม +)</option>
+                        <option value="ความผิดพลาด">ความผิดพลาด (หักแต้ม -)</option>
+                      </select>
+                    </div>
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">ประเภทการปรับแต้ม *</label>
-                    <select id="adjType" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none">
-                      <option value="ความดีความชอบ">ความดีความชอบ (เพิ่มแต้ม +)</option>
-                      <option value="ความผิดพลาด">ความผิดพลาด (หักแต้ม -)</option>
-                    </select>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">คะแนน (1 - 50) *</label>
+                    <input type="number" id="adjPoints" min="1" max="50" step="1" value="5" required class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">เหตุผลในการปรับคะแนน *</label>
+                    <textarea id="adjReason" rows="3" required placeholder="ระบุเหตุผลในการเพิ่มหรือหักคะแนน..." class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none"></textarea>
+                  </div>
+                  <button type="submit" class="w-full py-2.5 px-4 bg-svv-600 hover:bg-svv-700 text-white font-bold rounded-xl text-sm shadow transition">
+                    บันทึกการปรับคะแนน
+                  </button>
+                </form>
+              </div>
+
+              <!-- Right: Who gave/deducted KPI to whom and why -->
+              <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 class="text-sm font-extrabold text-slate-800">📋 ประวัติการเพิ่ม / ลดคะแนน KPI (ใครให้ใคร เพราะอะไร)</h3>
+                    <p class="text-[11px] text-slate-500">ตรวจสอบรายการปรับแต้มพิเศษทั้งหมด พร้อมระบุผู้สั่งการและเหตุผล</p>
                   </div>
                 </div>
-                <div>
-                  <label class="block text-xs font-bold text-slate-700 mb-1">คะแนน (1 - 50) *</label>
-                  <input type="number" id="adjPoints" min="1" max="50" step="1" value="5" required class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none">
+                <div class="max-h-96 overflow-y-auto overflow-x-auto custom-scrollbar">
+                  <table class="w-full text-xs text-left">
+                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold sticky top-0">
+                      <tr>
+                        <th class="py-2.5 px-3">พนักงานที่ได้รับ/ถูกหัก</th>
+                        <th class="py-2.5 px-2 text-center">แต้ม</th>
+                        <th class="py-2.5 px-3">ประเภท & เหตุผล</th>
+                        <th class="py-2.5 px-3">ผู้ให้/ลดคะแนน</th>
+                        <th class="py-2.5 px-2">วัน-เวลา</th>
+                        <th class="py-2.5 px-2 text-center">ลบ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cmdKpiAdjHistoryTableBody" class="divide-y divide-slate-100 text-slate-700"></tbody>
+                  </table>
                 </div>
-                <div>
-                  <label class="block text-xs font-bold text-slate-700 mb-1">เหตุผลในการปรับคะแนน *</label>
-                  <textarea id="adjReason" rows="3" required placeholder="ระบุเหตุผลในการเพิ่มหรือหักคะแนน..." class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-svv-500 focus:outline-none"></textarea>
-                </div>
-                <button type="submit" class="w-full py-2.5 px-4 bg-svv-600 hover:bg-svv-700 text-white font-bold rounded-xl text-sm shadow transition">
-                  บันทึกการปรับคะแนน
-                </button>
-              </form>
+              </div>
             </div>
           </div>
           </div>
@@ -594,18 +622,35 @@
               💡 <strong>เกณฑ์การคำนวณคะแนน KPI:</strong> งานที่เสร็จแล้ว (Done) +5 แต้ม | ส่งตรงเวลา +10 แต้ม | ส่งล่าช้า -5 แต้ม | คะแนนความพึงพอใจ (1-5 ดาว) x 4 แต้ม | แต้มพิเศษ (+/-) <em>*(หมายเหตุ: หากยังไม่มีงานที่ทำเสร็จ จะยังไม่ได้รับคะแนนดาวความพึงพอใจ)*</em>
             </div>
 
-            <!-- Charts Row -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Charts & Right-Side KPI Adjustment Log Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <h4 class="text-xs font-extrabold text-slate-700 mb-4">📈 อันดับคะแนน KPI รวม</h4>
                 <div class="h-64">
                   <canvas id="chartKpiTotal"></canvas>
                 </div>
               </div>
-              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <h4 class="text-xs font-extrabold text-slate-700 mb-4">⏱️ สัดส่วนงาน: ตรงเวลา vs ล่าช้า</h4>
-                <div class="h-64">
-                  <canvas id="chartOntimeLate"></canvas>
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div>
+                    <h4 class="text-xs font-extrabold text-slate-800">⚖️ ประวัติการเพิ่ม / ลดคะแนน KPI (ใครให้ใคร เพราะอะไร)</h4>
+                    <p class="text-[11px] text-slate-500">แสดงรายการผู้สั่งการที่เพิ่มหรือหักคะแนนพนักงาน พร้อมเหตุผลกำกับ</p>
+                  </div>
+                </div>
+                <div class="max-h-64 overflow-y-auto overflow-x-auto custom-scrollbar flex-1">
+                  <table class="w-full text-xs text-left">
+                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold sticky top-0">
+                      <tr>
+                        <th class="py-2.5 px-3">ผู้ได้รับ/ถูกหัก</th>
+                        <th class="py-2.5 px-2 text-center">แต้ม</th>
+                        <th class="py-2.5 px-3">เหตุผล</th>
+                        <th class="py-2.5 px-3">ผู้ให้/ลดคะแนน</th>
+                        <th class="py-2.5 px-2">เวลา</th>
+                        <th class="py-2.5 px-2 text-center">ลบ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="kpiAdjustmentsRightTableBody" class="divide-y divide-slate-100 text-slate-700"></tbody>
+                  </table>
                 </div>
               </div>
             </div>

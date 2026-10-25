@@ -24,6 +24,7 @@ let state = {
     handoverAssignees: [],
   },
   editingLogId: null,
+  activeStackTaskByCol: {},
 };
 
 const THAI_MONTHS = {
@@ -659,6 +660,7 @@ function renderCommanderTabs() {
   renderManageTasksTable();
   if (state.commanderTab === 'handover') renderHandoverRequests();
   if (state.commanderTab === 'review') renderReviewTasks();
+  if (state.commanderTab === 'kpi_adj') renderKpiDashboard();
 }
 
 async function handleCreateTask(e) {
@@ -1001,21 +1003,107 @@ function renderKanbanBoard() {
       if (!colTasks.length) {
         listEl.innerHTML = '<div class="h-24 rounded-xl border border-dashed border-slate-200/80 flex items-center justify-center text-[11px] text-slate-400">ไม่มีรายการงาน</div>';
       } else {
-        listEl.innerHTML = colTasks.map(t => renderKanbanCard(t)).join('');
+        let activeId = state.activeStackTaskByCol[colKey];
+        if (!activeId || !colTasks.some(t => String(t.task_id) === String(activeId))) {
+          activeId = String(colTasks[0].task_id);
+          state.activeStackTaskByCol[colKey] = activeId;
+        }
+        listEl.innerHTML = colTasks.map((t, idx) => renderKanbanCard(t, colTasks, idx, colKey, activeId)).join('');
       }
     }
   });
 }
 
-function renderKanbanCard(t) {
+function switchStackedCard(colKey, selectedTaskId) {
+  state.activeStackTaskByCol[colKey] = String(selectedTaskId);
+  const colList = document.getElementById(`colList${colKey}`);
+  if (!colList) return;
+  const cards = colList.querySelectorAll('.kanban-card');
+  cards.forEach(card => {
+    const cid = card.getAttribute('data-id');
+    if (String(cid) === String(selectedTaskId)) {
+      card.classList.remove('hidden');
+      const sel = card.querySelector('.card-stack-dropdown');
+      if (sel) sel.value = String(selectedTaskId);
+    } else {
+      card.classList.add('hidden');
+    }
+  });
+}
+
+function handleCardBodyClick(e, taskId) {
+  if (e.target.closest('button') || e.target.closest('select') || e.target.closest('a')) return;
+  openProgressModal(taskId);
+}
+
+async function handleQuickStatusSelect(taskId, targetStatus, selectEl) {
+  const task = state.tasks.find(t => String(t.task_id) === String(taskId));
+  if (!task || task.status === targetStatus) return;
+
+  // Reset select visually in case modal is cancelled
+  if (selectEl) selectEl.value = task.status;
+
+  if (targetStatus === 'In Review') {
+    openSubmitModal(task.task_id);
+    return;
+  }
+  if (targetStatus === 'Done') {
+    if (state.user?.is_commander || state.user?.is_admin) {
+      openApproveModal(task.task_id);
+    } else {
+      showToast('⚠️ เฉพาะผู้มียศระดับสั่งการเท่านั้นที่สามารถตรวจรับงานไป Done ได้', 'warning');
+    }
+    return;
+  }
+  if ((targetStatus === 'In Progress' || targetStatus === 'Revision' || targetStatus === 'To Do') && (task.status === 'In Review' || task.status === 'Done')) {
+    if (state.user?.is_commander || state.user?.is_admin) {
+      openReturnModal(task.task_id, targetStatus);
+    } else {
+      showToast('⚠️ เฉพาะผู้สั่งการเท่านั้นที่สามารถประเมินผลและย้ายสถานะนี้ได้', 'warning');
+    }
+    return;
+  }
+  await quickMoveTask(task.task_id, targetStatus);
+}
+
+function renderKanbanCard(t, colTasks = [], index = 0, colKey = '', activeId = '') {
   const isComm = state.user?.is_commander || state.user?.is_admin;
   const dueBadge = getDueAlertBadgeHtml(t);
   const prioBadge = getPriorityBadgeHtml(t.priority);
   const hasAttach = Boolean(t.attachment_url && String(t.attachment_url).trim());
   const isPendingHandover = t.handover_status === 'Pending';
 
+  const isStacked = colTasks.length > 1;
+  const isHidden = isStacked && String(t.task_id) !== String(activeId);
+
+  let stackSelectHtml = '';
+  if (isStacked) {
+    const stackOptions = colTasks.map((st, sIdx) => {
+      const selAttr = String(st.task_id) === String(t.task_id) ? 'selected' : '';
+      return `<option value="${st.task_id}" ${selAttr}>${sIdx + 1}. ${escapeHtml(st.title)}</option>`;
+    }).join('');
+    stackSelectHtml = `
+      <div class="card-stack-box" onclick="event.stopPropagation()">
+        <div class="card-stack-label-row">
+          <span class="card-stack-title">📚 ซ้อน ${colTasks.length} งานในช่องนี้</span>
+          <span class="card-stack-count-badge">${index + 1} จาก ${colTasks.length}</span>
+        </div>
+        <select class="card-stack-dropdown" onchange="switchStackedCard('${colKey}', this.value)" title="คลิกเพื่อสลับดูงานอื่นที่ซ้อนอยู่ในช่องนี้">
+          ${stackOptions}
+        </select>
+      </div>
+    `;
+  }
+
+  const statuses = ['To Do', 'In Progress', 'In Review', 'Revision', 'Done'];
+  const statusOptions = statuses.map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>🔄 ${s}</option>`).join('');
+
   return `
-    <div id="card_${t.task_id}" draggable="true" ondragstart="handleDragStart(event, '${t.task_id}')" ondragend="handleDragEnd(event)" class="kanban-card bg-white p-3 rounded-xl border border-slate-200/90 shadow-sm hover:shadow-md space-y-2">
+    <div id="card_${t.task_id}" data-id="${t.task_id}" draggable="true"
+      ondragstart="handleDragStart(event, '${t.task_id}')" ondragend="handleDragEnd(event)"
+      onclick="handleCardBodyClick(event, '${t.task_id}')"
+      class="kanban-card ${isStacked ? 'card-stacked' : ''} ${isHidden ? 'hidden' : ''} bg-white p-3 rounded-xl border border-slate-200/90 shadow-sm hover:shadow-md space-y-2">
+      ${stackSelectHtml}
       <div class="flex items-start justify-between gap-1 flex-wrap">
         <div class="flex items-center gap-1 flex-wrap">
           ${prioBadge}
@@ -1055,7 +1143,10 @@ function renderKanbanCard(t) {
       </div>
 
       <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] gap-1 flex-wrap">
-        <div class="flex gap-1">
+        <div class="flex items-center gap-1 flex-wrap">
+          <select class="quick-move-sel" onchange="handleQuickStatusSelect('${t.task_id}', this.value, this)" title="เปลี่ยนสถานะงานด่วน">
+            ${statusOptions}
+          </select>
           <button onclick="openProgressModal('${t.task_id}')" title="บันทึก/ดูความคืบหน้า" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">📝</button>
           ${t.status !== 'Done' ? `<button onclick="openHandoverModal('${t.task_id}')" title="ส่งต่องาน / ปรับทีม" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">🤝</button>` : ''}
           ${t.can_edit ? `<button onclick="openEditModal('${t.task_id}')" title="แก้ไขงาน" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold">✏️</button>` : ''}
@@ -1261,17 +1352,80 @@ async function renderKpiDashboard() {
     `).join('');
 
     renderKpiCharts(res.leaderboard);
+    renderKpiAdjustmentsTables(res.adjustments || []);
     renderHistoryReport();
   } catch (err) {
     console.error('Failed to load KPI:', err);
   }
 }
 
+function renderKpiAdjustmentsTables(adjustments) {
+  const isComm = Boolean(state.user?.is_commander || state.user?.is_admin);
+  const targets = [
+    document.getElementById('kpiAdjustmentsRightTableBody'),
+    document.getElementById('cmdKpiAdjHistoryTableBody')
+  ].filter(Boolean);
+
+  if (!targets.length) return;
+
+  if (!adjustments || !adjustments.length) {
+    const emptyHtml = '<tr><td colspan="6" class="py-8 text-center text-slate-400">ยังไม่มีประวัติการเพิ่มหรือลดคะแนน KPI</td></tr>';
+    targets.forEach(tb => { tb.innerHTML = emptyHtml; });
+    return;
+  }
+
+  const rowsHtml = adjustments.map(a => {
+    const pts = parseFloat(a.points || 0);
+    const isPlus = pts >= 0;
+    const ptsBadge = isPlus
+      ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-extrabold text-[11px]">+${pts}</span>`
+      : `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-extrabold text-[11px]">${pts}</span>`;
+    const typeBadge = (a.reason_type || '').includes('ความผิดพลาด') || !isPlus
+      ? '<span class="text-[10px] font-bold text-rose-600">🔻 หักคะแนน</span>'
+      : '<span class="text-[10px] font-bold text-emerald-600">🔺 เพิ่มคะแนน</span>';
+    const targetName = a.target_fullname || a.username || '-';
+    const creatorName = a.creator_fullname || a.created_by || '-';
+
+    return `
+      <tr class="hover:bg-slate-50 transition">
+        <td class="py-2.5 px-3">
+          <div class="font-bold text-slate-800">${escapeHtml(targetName)}</div>
+          <div class="text-[10px] text-slate-400">@${escapeHtml(a.username || '-')}</div>
+        </td>
+        <td class="py-2.5 px-2 text-center">${ptsBadge}</td>
+        <td class="py-2.5 px-3">
+          <div>${typeBadge}</div>
+          <div class="text-slate-700 font-medium break-words">${escapeHtml(a.description || '-')}</div>
+        </td>
+        <td class="py-2.5 px-3">
+          <div class="font-bold text-svv-800">👑 ${escapeHtml(creatorName)}</div>
+          <div class="text-[10px] text-slate-400">@${escapeHtml(a.created_by || '-')}</div>
+        </td>
+        <td class="py-2.5 px-2 text-[11px] text-slate-500 whitespace-nowrap">${formatDate(a.created_at)}</td>
+        <td class="py-2.5 px-2 text-center">
+          ${isComm && a.id !== undefined ? `<button onclick="handleDeleteKpiAdjustment('${a.id}')" title="ลบรายการปรับคะแนนนี้" class="p-1 text-rose-500 hover:bg-rose-50 rounded-lg font-bold transition">🗑️</button>` : '-'}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  targets.forEach(tb => { tb.innerHTML = rowsHtml; });
+}
+
+async function handleDeleteKpiAdjustment(adjId) {
+  if (!confirm('ยืนยันลบรายการปรับคะแนน KPI นี้? (คะแนน KPI รวมจะถูกคำนวณใหม่ทันที)')) return;
+  try {
+    const res = await api(`/api/kpi/adjustments/${adjId}`, { method: 'DELETE' });
+    showToast(res.message || 'ลบรายการปรับคะแนนแล้ว', 'success');
+    await renderKpiDashboard();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
 function renderKpiCharts(data) {
   const labels = data.map(d => d.fullname || d.username);
   const totalScores = data.map(d => d.total_kpi);
-  const ontimes = data.map(d => d.ontime_count);
-  const lates = data.map(d => d.late_count);
 
   const ctx1 = document.getElementById('chartKpiTotal')?.getContext('2d');
   if (ctx1) {
@@ -1291,26 +1445,6 @@ function renderKpiCharts(data) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
-      }
-    });
-  }
-
-  const ctx2 = document.getElementById('chartOntimeLate')?.getContext('2d');
-  if (ctx2) {
-    if (state.chartOntime) state.chartOntime.destroy();
-    state.chartOntime = new Chart(ctx2, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'ส่งทันเวลา', data: ontimes, backgroundColor: '#10b981', borderRadius: 6 },
-          { label: 'ส่งล่าช้า', data: lates, backgroundColor: '#f87171', borderRadius: 6 }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
         scales: { y: { beginAtZero: true } }
       }
     });
@@ -1623,7 +1757,10 @@ async function openProgressModal(taskId) {
   infoEl.innerHTML = `
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h4 class="font-extrabold text-sm text-slate-800">📌 ${escapeHtml(task.title)}</h4>
-      <span class="badge-status ${getBadgeClass(task.status)} text-[10px]">${task.status}</span>
+      <div class="flex items-center gap-2">
+        ${task.can_edit ? `<button onclick="closeModal('modalProgress'); openEditModal('${task.task_id}');" class="px-2.5 py-1 bg-white hover:bg-svv-50 text-svv-700 border border-svv-200 rounded-lg text-[11px] font-bold shadow-sm transition">✏️ แก้ไขข้อมูลและรายละเอียดงานนี้</button>` : ''}
+        <span class="badge-status ${getBadgeClass(task.status)} text-[10px]">${task.status}</span>
+      </div>
     </div>
     <p class="text-slate-600">
       👤 ผู้รับผิดชอบ: <strong>${escapeHtml(task.assignee_name || '-')}</strong> |
@@ -1697,10 +1834,21 @@ async function loadTaskLogs(taskId) {
         `;
       }
 
+      const actText = l.action || '';
+      let actBadgeClass = 'bg-sky-100 text-sky-800';
+      if (actText.includes('ปัญหา') || actText.includes('ปฏิเสธ') || actText.includes('แก้ไข')) {
+        actBadgeClass = 'bg-rose-100 text-rose-800';
+      } else if (actText.includes('สรุป') || actText.includes('ส่งมอบ') || actText.includes('อนุมัติ')) {
+        actBadgeClass = 'bg-emerald-100 text-emerald-800';
+      }
+
       return `
         <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-          <div class="flex items-center justify-between text-[11px]">
-            <span class="font-bold text-svv-800">${escapeHtml(l.action)} <span class="text-slate-500 font-normal">โดย @${escapeHtml(l.performed_by || '-')}</span></span>
+          <div class="flex items-center justify-between text-[11px] flex-wrap gap-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="px-2 py-0.5 rounded-md font-bold text-[10px] ${actBadgeClass}">${escapeHtml(actText)}</span>
+              <span class="text-slate-600 font-semibold">👤 @${escapeHtml(l.performed_by || '-')}</span>
+            </div>
             <div class="flex items-center gap-2">
               <span class="text-slate-400">${formatDate(l.created_at)}</span>
               ${canModifyThis ? `
