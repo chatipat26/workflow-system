@@ -5,19 +5,23 @@ body {
 }
 
 /* Custom scrollbars */
-::-webkit-scrollbar {
+::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-track {
   background: #f1f5f9;
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb,
+.custom-scrollbar::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
 
@@ -60,3 +64,20 @@ body {
 .badge-revision { background: #ffe4e6; color: #e11d48; }
 .badge-done { background: #dcfce7; color: #15803d; }
 .badge-overdue { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+.badge-warning { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+
+/* Interactive Multi-Select Operator Pills */
+.multi-option-pill {
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.multi-option-pill:hover {
+  border-color: #93c5fd;
+  background-color: #f8fafc;
+}
+.multi-option-pill.selected {
+  border-color: #0284c7;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-weight: 600;
+}
